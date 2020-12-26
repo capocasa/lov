@@ -57,9 +57,22 @@ proc update(texture: TexturePtr, pic: Picture) =
 proc update(renderer: RendererPtr, texture: TexturePtr) =
   discard renderer.clear()
   discard renderer.copy(texture, nil, nil)
-  renderer.present()
+
+var timestamp: culonglong
+var newframe = false
+
+var remainingPerfsInFrame: uint64
+var remainingMsInFrame: uint64
+let perfsPerSecond = getPerformanceFrequency()
+let perfsPerFrame = perfsPerSecond div fps.uint64
+var nextFrameInPerfs = getPerformanceCounter()
+
+var empty:bool
 
 for packet in demuxer:
+  empty = false
+  newframe = false
+
   case packet.track.kind:
   of tkAudio:
     echo "audio $# packet" % $packet.track.audioCodec
@@ -67,6 +80,7 @@ for packet in demuxer:
     echo "video $# packet" % $packet.track.videoCodec
     case packet.track.videoCodec:
     of vcAv1:
+      newframe = true
       echo "send data chunk to decoder"
       for chunk in packet:
         var data = newData(chunk)
@@ -78,12 +92,27 @@ for packet in demuxer:
             # TODO: handle and continue
     else:
       discard
-  
+  else:
+    echo "unknown packet"
+
+  if empty:
+    break
+
+  if newframe:
+    nextFrameInPerfs += perfsPerFrame
     try:
       let pic = av1Decoder.getPicture()
       texture.update(pic)
       renderer.update(texture)
-      delay 20
+
+      remainingPerfsInFrame = nextFrameInPerfs - getPerformanceCounter()
+      if remainingPerfsInFrame < 0:
+        # TODO: warn or respond
+        remainingPerfsInFrame = 0
+      remainingMsInFrame = (remainingPerfsInFrame * 1000) div perfsPerSecond
+      echo "perfsPerFrame: ", $perfsPerFrame, " perfsPerSecond: ", $perfsPerSecond, " remainingPerfsInFrame: ", $remainingPerfsInFrame, " remainingMsInFrame: ", $remainingMsInFrame
+      delay remainingMsInFrame.uint32
+      renderer.present()
     except BufferError:
       echo "skipping picture"
       continue
