@@ -1,6 +1,6 @@
 
 import sdl2
-import dav1d, nestegg
+import dav1d, nestegg, opus
 
 import nimvideo/[dump, sdl2_aux]
 
@@ -12,6 +12,9 @@ template newData(chunk: Chunk): Data =
 const
   width = 720
   height = 480
+  fps = 25
+  rate = 48000
+  channels = 2
 
 var
   window: WindowPtr
@@ -40,7 +43,9 @@ var file = open("resources/test.webm")
 
 var demuxer = newDemuxer(file)
 
-var decoder = newDecoder()
+var av1Decoder = dav1d.newDecoder()
+
+var opusDecoder = opus.newDecoder(sr48k, chStereo)
 
 proc update(texture: TexturePtr, pic: Picture) =
   let r = updateYUVTexture(texture, nil,
@@ -65,31 +70,24 @@ for packet in demuxer:
       echo "send data chunk to decoder"
       for chunk in packet:
         var data = newData(chunk)
-        decoder.send(data)
+        try:
+          av1Decoder.send(data)
+        except BufferError:
+          echo "buffer empty, exiting"
+          empty = true
+            # TODO: handle and continue
     else:
       discard
   
     try:
-      let pic = decoder.getPicture()
+      let pic = av1Decoder.getPicture()
       texture.update(pic)
       renderer.update(texture)
       delay 20
     except BufferError:
       echo "skipping picture"
       continue
-
-  else:
-    echo "unknown packet"
-    discard
-
-while true:
-  try:
-    let pic = decoder.getPicture()
-    texture.update(pic)
-  except BufferError:
-    break
-  renderer.update(texture)
-  delay 20
+  
 
 delay 500
 

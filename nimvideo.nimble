@@ -13,4 +13,4 @@ requires "nim >= 1.4.2"
 requires "nestegg"
 requires "dav1d"
 requires "sdl2"
-
+requires "opus"
