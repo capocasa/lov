@@ -77,8 +77,10 @@ for packet in demuxer:
   case packet.track.kind:
   of tkAudio:
     echo "audio $# packet" % $packet.track.audioCodec
+    echo $packet.track.audio_params
   of tkVideo:
     echo "video $# packet" % $packet.track.videoCodec
+    echo $packet.track.video_params
     case packet.track.videoCodec:
     of vcAv1:
       newframe = true
