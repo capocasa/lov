@@ -65,6 +65,7 @@ var remainingPerfsInFrame: uint64
 var remainingMsInFrame: uint64
 let perfsPerSecond = getPerformanceFrequency()
 let perfsPerFrame = perfsPerSecond div fps.uint64
+var currentTimeInPerfs: uint64
 var nextFrameInPerfs = getPerformanceCounter()
 
 var empty:bool
@@ -105,10 +106,12 @@ for packet in demuxer:
       texture.update(pic)
       renderer.update(texture)
 
-      remainingPerfsInFrame = nextFrameInPerfs - getPerformanceCounter()
-      if remainingPerfsInFrame < 0:
+      currentTimeInPerfs = getPerformanceCounter()
+      if nextFrameInPerfs < currentTimeInPerfs:
         # TODO: warn or respond
         remainingPerfsInFrame = 0
+      else:
+        remainingPerfsInFrame = nextFrameInPerfs - currentTimeInPerfs
       remainingMsInFrame = (remainingPerfsInFrame * 1000) div perfsPerSecond
       echo "perfsPerFrame: ", $perfsPerFrame, " perfsPerSecond: ", $perfsPerSecond, " remainingPerfsInFrame: ", $remainingPerfsInFrame, " remainingMsInFrame: ", $remainingMsInFrame
       delay remainingMsInFrame.uint32
@@ -116,7 +119,9 @@ for packet in demuxer:
     except BufferError:
       echo "skipping picture"
       continue
-  
+    except DecodeError:
+      echo "decode error"
+      break
 
 delay 500
 
