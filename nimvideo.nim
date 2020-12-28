@@ -1,5 +1,5 @@
 
-import sdl2
+import sdl2, sdl2/[audio]
 import dav1d, nestegg, opus
 
 import nimvideo/[dump, sdl2_aux]
@@ -34,6 +34,10 @@ discard renderer.clear()
 discard renderer.copy(texture, nil, nil)
 renderer.present()
 
+let requested = AudioSpec(freq: 48000, channels: 2, samples: 128)
+var obtained = AudioSpec()
+var audioDevice = openAudioDevice(nil, 0, requested.unsafeAddr, obtained.unsafeAddr, 0)
+
 var file = open("resources/test.webm")
 
 var demuxer = newDemuxer(file)
@@ -64,6 +68,8 @@ var currentTimeInPerfs: uint64
 var nextFrameInPerfs = getPerformanceCounter()
 
 var empty:bool
+
+pauseAudio(0)
 
 for packet in demuxer:
   empty = false
