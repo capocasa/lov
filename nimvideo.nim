@@ -5,9 +5,7 @@ import dav1d, nestegg, opus
 import nimvideo/[dump, sdl2_aux]
 
 template newData(chunk: Chunk): Data =
-  let data:ptr cuchar = chunk.data
-    # enforce expected type before cast
-  newData(cast[ptr uint8](data), chunk.size.uint)
+  newData(cast[ptr UncheckedArray[byte]](chunk.data), chunk.len)
 
 const
   width = 720
