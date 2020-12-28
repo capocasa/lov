@@ -4,6 +4,9 @@ import dav1d, nestegg, opus
 
 import nimvideo/[dump, sdl2_aux]
 
+type
+  InitException = object of IOError
+
 const
   width = 720
   height = 480
@@ -20,13 +23,11 @@ discard sdl2.init(INIT_EVERYTHING)
 
 window = createWindow("nimvideo", 100, 100, 100 + width, 1 + height, SDL_WINDOW_SHOWN)
 if window == nil:
-  echo("createWindow Error: ", getError())
-  quit(1)
+  raise newException(InitException, $getError())
 
 renderer = createRenderer(window, -1, RendererAccelerated or RendererPresentVsync)
 if renderer == nil:
-  echo("createRenderer Error: ", getError())
-  quit(1)
+  raise newException(InitException, $getError())
 
 texture = createTexture(renderer, SDL_PIXELFORMAT_IYUV, SDL_TEXTUREACCESS_STREAMING, width, height)
 
@@ -52,6 +53,8 @@ proc update(texture: TexturePtr, pic: Picture) =
     cast[ptr byte](pic.raw.data[1]), pic.raw.stride[1].cint, # U
     cast[ptr byte](pic.raw.data[2]), pic.raw.stride[1].cint  # V
   )
+  if r != 0.SDL_return:
+    raise newException(ValueError, "yuv updated failed")
 
 proc update(renderer: RendererPtr, texture: TexturePtr) =
   discard renderer.clear()
@@ -82,7 +85,6 @@ for packet in demuxer:
     case packet.track.audioCodec:
     of acOpus:
       for chunk in packet:
-        echo dump chunk
         let pcm = opusDecoder.decode(chunk.data, chunk.len)
         let r = audioDevice.queueAudio(pcm.data, pcm.len.cuint)
         if r != 0:
@@ -94,12 +96,11 @@ for packet in demuxer:
     echo $packet.track.video_params
     case packet.track.videoCodec:
     of vcAv1:
-      echo "send data chunk to decoder"
       for chunk in packet:
         try:
           av1Decoder.send(chunk.data, chunk.len)
         except BufferError:
-          echo "buffer empty, exiting"
+          # TODO: handle
           raise getCurrentException()
 
         # video decode and delay for timing source
@@ -108,30 +109,29 @@ for packet in demuxer:
         try:
           pic = av1Decoder.getPicture()
         except BufferError:
-          echo "skipping picture"
-          continue
-        except dav1d.DecodeError:
-          echo "decode error"
-          break
+          # TODO: handle
+          raise getCurrentException()
         texture.update(pic)
         renderer.update(texture)
 
         currentTimeInPerfs = getPerformanceCounter()
         if nextFrameInPerfs < currentTimeInPerfs:
-          # TODO: warn or respond
+          # TODO: handle frame slowdown
           remainingPerfsInFrame = 0
         else:
           remainingPerfsInFrame = nextFrameInPerfs - currentTimeInPerfs
         remainingMsInFrame = (remainingPerfsInFrame * 1000) div perfsPerSecond
-        echo "perfsPerFrame: ", $perfsPerFrame, " perfsPerSecond: ", $perfsPerSecond, " remainingPerfsInFrame: ", $remainingPerfsInFrame, " remainingMsInFrame: ", $remainingMsInFrame
+          # echo "perfsPerFrame: ", $perfsPerFrame, " perfsPerSecond: ", $perfsPerSecond, " remainingPerfsInFrame: ", $remainingPerfsInFrame, " remainingMsInFrame: ", $remainingMsInFrame
         delay remainingMsInFrame.uint32
-        # main timing source
+          # main timing source
         renderer.present()
-        # show when everything else has been done
+          # show when everything else has been done
     else:
-      echo "unknown video packet"
+      # TODO: handle unknown packet codec
+      discard
   else:
-    echo "unknown packet"
+    # TODO: handle packet
+    discard
 
 
 delay 500
