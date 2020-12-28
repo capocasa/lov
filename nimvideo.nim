@@ -4,9 +4,6 @@ import dav1d, nestegg, opus
 
 import nimvideo/[dump, sdl2_aux]
 
-template newData(chunk: Chunk): Data =
-  newData(cast[ptr UncheckedArray[byte]](chunk.data), chunk.len)
-
 const
   width = 720
   height = 480
@@ -79,8 +76,11 @@ for packet in demuxer:
     case packet.track.audioCodec:
     of acOpus:
       for chunk in packet:
-        #let pcm = opusDecoder.decode(chunk.toOpenArray(0, chunk.len))
-        discard
+        echo dump chunk
+        let pcm = opusDecoder.decode(chunk.data, chunk.len)
+        let r = audioDevice.queueAudio(pcm.data, pcm.len.cuint)
+        if r != 0:
+          raise newException(IOError, $getError())
     else:
       raise newException(ValueError, "codec $# not supported" % $packet.track.audioCodec)
   of tkVideo:
@@ -90,11 +90,8 @@ for packet in demuxer:
     of vcAv1:
       echo "send data chunk to decoder"
       for chunk in packet:
-        echo dump(chunk)
-        var data = newData(chunk)
-        echo data.dump
         try:
-          av1Decoder.send(data)
+          av1Decoder.send(chunk.data, chunk.len)
         except BufferError:
           echo "buffer empty, exiting"
           raise getCurrentException()
@@ -122,7 +119,6 @@ for packet in demuxer:
         remainingMsInFrame = (remainingPerfsInFrame * 1000) div perfsPerSecond
         echo "perfsPerFrame: ", $perfsPerFrame, " perfsPerSecond: ", $perfsPerSecond, " remainingPerfsInFrame: ", $remainingPerfsInFrame, " remainingMsInFrame: ", $remainingMsInFrame
         delay remainingMsInFrame.uint32
-        delay 30
         # main timing source
         renderer.present()
         # show when everything else has been done
