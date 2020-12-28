@@ -76,52 +76,61 @@ for packet in demuxer:
   of tkAudio:
     echo "audio $# packet" % $packet.track.audioCodec
     echo $packet.track.audio_params
+    case packet.track.audioCodec:
+    of acOpus:
+      for chunk in packet:
+        #let pcm = opusDecoder.decode(chunk.toOpenArray(0, chunk.len))
+        discard
+    else:
+      raise newException(ValueError, "codec $# not supported" % $packet.track.audioCodec)
   of tkVideo:
     echo "video $# packet" % $packet.track.videoCodec
     echo $packet.track.video_params
     case packet.track.videoCodec:
     of vcAv1:
-      newframe = true
       echo "send data chunk to decoder"
       for chunk in packet:
+        echo dump(chunk)
         var data = newData(chunk)
+        echo data.dump
         try:
           av1Decoder.send(data)
         except BufferError:
           echo "buffer empty, exiting"
-          empty = true
-            # TODO: handle and continue
+          raise getCurrentException()
+
+        # video decode and delay for timing source
+        nextFrameInPerfs += perfsPerFrame
+        var pic:Picture
+        try:
+          pic = av1Decoder.getPicture()
+        except BufferError:
+          echo "skipping picture"
+          continue
+        except dav1d.DecodeError:
+          echo "decode error"
+          break
+        texture.update(pic)
+        renderer.update(texture)
+
+        currentTimeInPerfs = getPerformanceCounter()
+        if nextFrameInPerfs < currentTimeInPerfs:
+          # TODO: warn or respond
+          remainingPerfsInFrame = 0
+        else:
+          remainingPerfsInFrame = nextFrameInPerfs - currentTimeInPerfs
+        remainingMsInFrame = (remainingPerfsInFrame * 1000) div perfsPerSecond
+        echo "perfsPerFrame: ", $perfsPerFrame, " perfsPerSecond: ", $perfsPerSecond, " remainingPerfsInFrame: ", $remainingPerfsInFrame, " remainingMsInFrame: ", $remainingMsInFrame
+        delay remainingMsInFrame.uint32
+        delay 30
+        # main timing source
+        renderer.present()
+        # show when everything else has been done
     else:
-      discard
+      echo "unknown video packet"
   else:
     echo "unknown packet"
 
-  if empty:
-    break
-
-  if newframe:
-    nextFrameInPerfs += perfsPerFrame
-    try:
-      let pic = av1Decoder.getPicture()
-      texture.update(pic)
-      renderer.update(texture)
-
-      currentTimeInPerfs = getPerformanceCounter()
-      if nextFrameInPerfs < currentTimeInPerfs:
-        # TODO: warn or respond
-        remainingPerfsInFrame = 0
-      else:
-        remainingPerfsInFrame = nextFrameInPerfs - currentTimeInPerfs
-      remainingMsInFrame = (remainingPerfsInFrame * 1000) div perfsPerSecond
-      echo "perfsPerFrame: ", $perfsPerFrame, " perfsPerSecond: ", $perfsPerSecond, " remainingPerfsInFrame: ", $remainingPerfsInFrame, " remainingMsInFrame: ", $remainingMsInFrame
-      delay remainingMsInFrame.uint32
-      renderer.present()
-    except BufferError:
-      echo "skipping picture"
-      continue
-    except DecodeError:
-      echo "decode error"
-      break
 
 delay 500
 
