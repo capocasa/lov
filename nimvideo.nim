@@ -35,9 +35,11 @@ discard renderer.clear()
 discard renderer.copy(texture, nil, nil)
 renderer.present()
 
-let requested = AudioSpec(freq: 48000, channels: 2, samples: 128)
+let requested = AudioSpec(freq: 48000, channels: 2, samples: 1024, format: AUDIO_S16LSB)
 var obtained = AudioSpec()
 var audioDevice = openAudioDevice(nil, 0, requested.unsafeAddr, obtained.unsafeAddr, 0)
+
+audioDevice.pauseAudioDevice(0)
 
 var file = open("resources/test.webm")
 
@@ -72,7 +74,14 @@ var nextFrameInPerfs = getPerformanceCounter()
 
 var empty:bool
 
-pauseAudio(0)
+
+proc testAudioDevice() =
+  var a:array[96000, int16]
+  for i in 0..<96000:
+    a[i] = if (i div 400) mod 2 == 0: 20000 else: -20000
+  let r = audioDevice.queueAudio(a.addr, 96000.cuint)
+  audioDevice.pauseAudioDevice(0)
+
 
 for packet in demuxer:
   empty = false
@@ -139,6 +148,7 @@ delay 500
 destroy(renderer)
 destroy(texture)
 close(file)
+audioDevice.closeAudioDevice
 
 sdl2.quit()
 
