@@ -17,7 +17,7 @@ const
   # audioBufferSize = uint16((1.0 / fps) * rate.float * channels.float)
     # samples to fill one video frame
 
-  queueSize = 10
+  queueSize = 5
 var
   window: WindowPtr
   renderer: RendererPtr
@@ -67,20 +67,6 @@ var timestamp: culonglong
 
 import random
 
-#[
-for i in 0..100:
-  var samples:Samples
-  new(samples)
-  samples.data = cast[ptr UncheckedArray[int16]](alloc(1800 * 2))
-  samples.len = 1800
-  for i in 0..<samples.len:
-    samples.data[i] = rand(int16) div 2
-  
-  let r = audioDevice.queueAudio(samples.data, samples.bytes.uint32)
-  if r != 0:
-    raise newException(IOError, $getError())
-]#
-
 type
   MessageKind = enum
     msgDone, msgVideo, msgAudio
@@ -95,7 +81,8 @@ type
 
 var chan: Channel[Message]
 
-proc demuxode() {.thread} =
+# proc demuxode() {.thread} =
+proc demuxode() =
 
   var av1Decoder = dav1d.newDecoder()
   var opusDecoder = opus.newDecoder(sr48k, chStereo)
@@ -105,27 +92,19 @@ proc demuxode() {.thread} =
 
     case packet.track.kind:
     of tkAudio:
-      echo "audio $# packet timestamp $#" % [$packet.track.audioCodec, $packet.timestamp]
-      echo $packet.track.audio_params
+      # echo "audio $# packet timestamp $#" % [$packet.track.audioCodec, $packet.timestamp]
+      # echo $packet.track.audio_params
       case packet.track.audioCodec:
       of acOpus:
         for chunk in packet:
           var msg = Message(kind: msgAudio)
           msg.samples = opusDecoder.decode(chunk.data, chunk.len)
           chan.send(msg)
-          #[
-          var samples:Samples
-          new(samples)
-          samples.data = cast[ptr UncheckedArray[int16]](alloc(1800 * 2))
-          samples.len = 1800
-          for i in 0..<samples.len:
-            samples.data[i] = rand(int16) div 2
-          ]#
       else:
         raise newException(ValueError, "codec $# not supported" % $packet.track.audioCodec)
     of tkVideo:
-      echo "video $# packet timestamp $# " % [$packet.track.videoCodec, $packet.timestamp]
-      echo $packet.track.video_params
+      # echo "video $# packet timestamp $# " % [$packet.track.videoCodec, $packet.timestamp]
+      # echo $packet.track.video_params
       case packet.track.videoCodec:
       of vcAv1:
         for chunk in packet:
@@ -192,19 +171,20 @@ proc present() {.thread} =
       nextFrameInPerfs += perfsPerFrame
 
     of msgAudio:
-        let r = audioDevice.queueAudio(msg.samples.data, msg.samples.bytes.uint32)
-        if r != 0:
-          raise newException(IOError, $getError())
+      let r = audioDevice.queueAudio(msg.samples.data, msg.samples.bytes.uint32)
+      if r != 0:
+        raise newException(IOError, $getError())
+      discard
 
 chan.open(queueSize)
 
-var demuxoder:Thread[void]
-demuxoder.createThread(demuxode)
+# var demuxoder:Thread[void]
+# demuxoder.createThread(demuxode)
 
 var presenter:Thread[void]
 presenter.createThread(present)
 
-demuxoder.joinThread()
+demuxode()
 
 delay 500
 
