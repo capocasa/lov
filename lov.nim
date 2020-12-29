@@ -13,8 +13,7 @@ const
   fps = 25
   rate = 48000
   channels = chStereo
-  audioBufferSize = 1024
-  # audioBufferSize = uint16((1.0 / fps) * rate.float * channels.float)
+  audioBufferSize = uint16((1.0 / fps) * rate.float * channels.float)
     # samples to fill one video frame
 
   queueSize = 5
@@ -43,9 +42,6 @@ let requested = AudioSpec(freq: rate, channels: channels.uint8, samples: audioBu
 var obtained = AudioSpec()
 var audioDevice = openAudioDevice(nil, 0, requested.unsafeAddr, obtained.unsafeAddr, 0)
 
-echo $requested
-echo $obtained
-
 #audioDevice.pauseAudioDevice(0)
 
 var file = open("resources/test.webm")
@@ -57,7 +53,7 @@ proc update(texture: TexturePtr, pic: Picture) =
     cast[ptr byte](pic.raw.data[2]), pic.raw.stride[1].cint  # V
   )
   if r != 0.SDL_return:
-    raise newException(ValueError, "yuv updated failed")
+    raise newException(ValueError, "yuv update failed, " % $getError())
 
 proc update(renderer: RendererPtr, texture: TexturePtr) =
   discard renderer.clear()
@@ -92,8 +88,6 @@ proc demuxode() =
 
     case packet.track.kind:
     of tkAudio:
-      # echo "audio $# packet timestamp $#" % [$packet.track.audioCodec, $packet.timestamp]
-      # echo $packet.track.audio_params
       case packet.track.audioCodec:
       of acOpus:
         for chunk in packet:
@@ -103,8 +97,6 @@ proc demuxode() =
       else:
         raise newException(ValueError, "codec $# not supported" % $packet.track.audioCodec)
     of tkVideo:
-      # echo "video $# packet timestamp $# " % [$packet.track.videoCodec, $packet.timestamp]
-      # echo $packet.track.video_params
       case packet.track.videoCodec:
       of vcAv1:
         for chunk in packet:
@@ -163,7 +155,6 @@ proc present() {.thread} =
       else:
         remainingPerfsInFrame = nextFrameInPerfs - currentTimeInPerfs
       remainingMsInFrame = (remainingPerfsInFrame * 1000) div perfsPerSecond
-        # echo "perfsPerFrame: ", $perfsPerFrame, " perfsPerSecond: ", $perfsPerSecond, " remainingPerfsInFrame: ", $remainingPerfsInFrame, " remainingMsInFrame: ", $remainingMsInFrame
       delay remainingMsInFrame.uint32
         # main timing source
       renderer.present()
