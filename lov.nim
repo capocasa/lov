@@ -17,6 +17,7 @@ const
   # audioBufferSize = uint16((1.0 / fps) * rate.float * channels.float)
     # samples to fill one video frame
 
+  queueSize = 10
 var
   window: WindowPtr
   renderer: RendererPtr
@@ -49,12 +50,6 @@ echo $obtained
 
 var file = open("resources/test.webm")
 
-var demuxer = newDemuxer(file)
-
-var av1Decoder = dav1d.newDecoder()
-
-var opusDecoder = opus.newDecoder(sr48k, chStereo)
-
 proc update(texture: TexturePtr, pic: Picture) =
   let r = updateYUVTexture(texture, nil,
     cast[ptr byte](pic.raw.data[0]), pic.raw.stride[0].cint, # Y
@@ -86,62 +81,78 @@ for i in 0..100:
     raise newException(IOError, $getError())
 ]#
 
-var pics = initDeque[Picture]()
-var frames = initDeque[Samples]()
-
-for packet in demuxer:
-
-  case packet.track.kind:
-  of tkAudio:
-    echo "audio $# packet timestamp $#" % [$packet.track.audioCodec, $packet.timestamp]
-    echo $packet.track.audio_params
-    case packet.track.audioCodec:
-    of acOpus:
-      for chunk in packet:
-        let samples = opusDecoder.decode(chunk.data, chunk.len)
-        #[
-        var samples:Samples
-        new(samples)
-        samples.data = cast[ptr UncheckedArray[int16]](alloc(1800 * 2))
-        samples.len = 1800
-        for i in 0..<samples.len:
-          samples.data[i] = rand(int16) div 2
-        ]#
-        frames.addLast(samples)
-    else:
-      raise newException(ValueError, "codec $# not supported" % $packet.track.audioCodec)
-  of tkVideo:
-    echo "video $# packet timestamp $# " % [$packet.track.videoCodec, $packet.timestamp]
-    echo $packet.track.video_params
-    case packet.track.videoCodec:
-    of vcAv1:
-      for chunk in packet:
-        try:
-          av1Decoder.send(chunk.data, chunk.len)
-        except BufferError:
-          # TODO: handle
-          raise getCurrentException()
-
-        # video decode and delay for timing source
-        var pic:Picture
-        try:
-          pic = av1Decoder.getPicture()
-        except BufferError:
-          # TODO: handle
-          raise getCurrentException()
-        
-        pics.addLast(pic)
-    else:
-      # TODO: handle unknown packet codec
+type
+  MessageKind = enum
+    msgDone, msgVideo, msgAudio
+  Message = object
+    case kind: MessageKind
+    of msgDone:
       discard
-  else:
-    # TODO: handle packet
-    discard
+    of msgVideo:
+      picture: Picture
+    of msgAudio:
+      samples: Samples
 
-for samples in frames:
-  let r = audioDevice.queueAudio(samples.data, samples.bytes.uint32)
-  if r != 0:
-    raise newException(IOError, $getError())
+var chan: Channel[Message]
+
+proc demuxode() {.thread} =
+
+  var av1Decoder = dav1d.newDecoder()
+  var opusDecoder = opus.newDecoder(sr48k, chStereo)
+  var demuxer = newDemuxer(file)
+
+  for packet in demuxer:
+
+    case packet.track.kind:
+    of tkAudio:
+      echo "audio $# packet timestamp $#" % [$packet.track.audioCodec, $packet.timestamp]
+      echo $packet.track.audio_params
+      case packet.track.audioCodec:
+      of acOpus:
+        for chunk in packet:
+          var msg = Message(kind: msgAudio)
+          msg.samples = opusDecoder.decode(chunk.data, chunk.len)
+          chan.send(msg)
+          #[
+          var samples:Samples
+          new(samples)
+          samples.data = cast[ptr UncheckedArray[int16]](alloc(1800 * 2))
+          samples.len = 1800
+          for i in 0..<samples.len:
+            samples.data[i] = rand(int16) div 2
+          ]#
+      else:
+        raise newException(ValueError, "codec $# not supported" % $packet.track.audioCodec)
+    of tkVideo:
+      echo "video $# packet timestamp $# " % [$packet.track.videoCodec, $packet.timestamp]
+      echo $packet.track.video_params
+      case packet.track.videoCodec:
+      of vcAv1:
+        for chunk in packet:
+          try:
+            av1Decoder.send(chunk.data, chunk.len)
+          except BufferError:
+            # TODO: handle
+            raise getCurrentException()
+
+          # video decode and delay for timing source
+          var msg = Message(kind: msgVideo)
+          try:
+            msg.picture = av1Decoder.getPicture()
+          except BufferError:
+            # TODO: handle
+            raise getCurrentException()
+          
+          chan.send(msg)
+      else:
+        # TODO: handle unknown packet codec
+        discard
+    else:
+      # TODO: handle packet
+      discard
+
+  chan.send(Message(kind: msgDone))
+
 
 var remainingPerfsInFrame: uint64
 var remainingMsInFrame: uint64
@@ -149,25 +160,51 @@ let perfsPerSecond = getPerformanceFrequency()
 let perfsPerFrame = perfsPerSecond div fps.uint64
 var currentTimeInPerfs: uint64
 
-audioDevice.pauseAudioDevice(0)
+proc present() {.thread} =
 
-var nextFrameInPerfs = getPerformanceCounter() + perfsPerFrame
-for pic in pics:
-  texture.update(pic)
-  renderer.update(texture)
-  currentTimeInPerfs = getPerformanceCounter()
-  if nextFrameInPerfs < currentTimeInPerfs:
-    # TODO: handle frame slowdown
-    remainingPerfsInFrame = 0
-  else:
-    remainingPerfsInFrame = nextFrameInPerfs - currentTimeInPerfs
-  remainingMsInFrame = (remainingPerfsInFrame * 1000) div perfsPerSecond
-    # echo "perfsPerFrame: ", $perfsPerFrame, " perfsPerSecond: ", $perfsPerSecond, " remainingPerfsInFrame: ", $remainingPerfsInFrame, " remainingMsInFrame: ", $remainingMsInFrame
-  delay remainingMsInFrame.uint32
-    # main timing source
-  renderer.present()
-    # show when everything else has been done
-  nextFrameInPerfs += perfsPerFrame
+  audioDevice.pauseAudioDevice(0)
+
+  var nextFrameInPerfs = getPerformanceCounter() + perfsPerFrame
+  while true:
+
+    let msg = chan.recv()
+
+    case msg.kind:
+    of msgDone:
+      break
+
+    of msgVideo:
+
+      texture.update(msg.picture)
+      renderer.update(texture)
+      currentTimeInPerfs = getPerformanceCounter()
+      if nextFrameInPerfs < currentTimeInPerfs:
+        # TODO: handle frame slowdown
+        remainingPerfsInFrame = 0
+      else:
+        remainingPerfsInFrame = nextFrameInPerfs - currentTimeInPerfs
+      remainingMsInFrame = (remainingPerfsInFrame * 1000) div perfsPerSecond
+        # echo "perfsPerFrame: ", $perfsPerFrame, " perfsPerSecond: ", $perfsPerSecond, " remainingPerfsInFrame: ", $remainingPerfsInFrame, " remainingMsInFrame: ", $remainingMsInFrame
+      delay remainingMsInFrame.uint32
+        # main timing source
+      renderer.present()
+        # show when everything else has been done
+      nextFrameInPerfs += perfsPerFrame
+
+    of msgAudio:
+        let r = audioDevice.queueAudio(msg.samples.data, msg.samples.bytes.uint32)
+        if r != 0:
+          raise newException(IOError, $getError())
+
+chan.open(queueSize)
+
+var demuxoder:Thread[void]
+demuxoder.createThread(demuxode)
+
+var presenter:Thread[void]
+presenter.createThread(present)
+
+demuxoder.joinThread()
 
 delay 500
 
