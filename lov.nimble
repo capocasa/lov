@@ -2,9 +2,9 @@
 
 version       = "0.1.0"
 author        = "Carlo Capocasa"
-description   = "An example webm/AV1 video player using nestegg, dav1d and opus"
+description   = "lov is the latest open video, a simplified, portable video player for webm/av1/opus"
 license       = "2BSD"
-bin           = @["nimvideo"]
+bin           = @["lov"]
 installExt    = @["nim"]
 
 # Dependencies
