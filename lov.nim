@@ -97,7 +97,7 @@ proc present() {.thread} =
 
   # initialize all needed SDL objects
   discard sdl2.init(INIT_EVERYTHING)
-  var window = createWindow("nimvideo", 100, 100, 100 + width, 1 + height, SDL_WINDOW_SHOWN)
+  var window = createWindow("lov", 100, 100, 100 + width, 1 + height, SDL_WINDOW_SHOWN)
   if window == nil:
     raise newException(IOError, $getError())
 
