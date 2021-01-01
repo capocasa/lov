@@ -66,7 +66,7 @@ Currently, the following file format was chosen as the "latest and greatest in o
 
 * A WebM container (demuxed by [nestegg](https://github.com/capocasa/nim-nestegg), by mozilla)
 * OM AV1 video (decoded by [dav1d](https://github.com/capocasa/nim-dav1d), by VideoLAN)
-* OPUS audio (decoded by [libopus](https://github.com/capocasa/nin-opus), by Xiphophorus
+* OPUS audio (decoded by [libopus](https://github.com/capocasa/nim-opus), by Xiphophorus
 
 Note that AV1 support is unofficial, but it is widely considered only a formality at this point.
 
