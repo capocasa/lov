@@ -39,9 +39,11 @@ It does work well enough that I would consider it suitable as a starting point f
 Usage as command-line tool
 --------------------------
 
+```
 $ lov myFile.webm
 
 # That's it, it will open an SDL window of appropriate size and play the file.
+```
 
 Usage as library
 ----------------
