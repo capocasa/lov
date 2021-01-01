@@ -7,7 +7,7 @@ lov stands for the "latest open video" and is a minimalistic SDL video player li
 Design criteria
 ---------------
 
-I wanted modern video for the nimx cross-platform app framework, which meant that all code used needs to portable across all nimx targets- Linux, OSX, Windows, iOS, Android and Emscripten (but not js)- and legally compatible. This calls for simple, proven, high-performance libraries written in C. I further wanted the interface to be as Nim-flavored as possible, which implies low-cost high level language features, thread-safety and automatic memory management.
+I wanted modern video for the [nimx cross-platform app framework](https://github.com/yglukhov/nimx), which meant that all code used needs to portable across all nimx targets- Linux, OSX, Windows, iOS, Android and Emscripten (but not js)- and legally compatible. This calls for simple, proven, high-performance libraries written in C. I further wanted the interface to be as Nim-flavored as possible, which implies low-cost high level language features, thread-safety and automatic memory management.
 
 Road map
 --------
@@ -64,9 +64,9 @@ File Format
 
 Currently, the following file format was chosen as the "latest and greatest in open video":
 
-* A WebM container (demuxed by nestegg, by mozilla)
-* OM AV1 video (decoded by dav1d, by VideoLAN)
-* OPUS audio (decoded by libopus, by Xiphophorus
+* A WebM container (demuxed by [nestegg](https://github.com/capocasa/nim-nestegg), by mozilla)
+* OM AV1 video (decoded by [dav1d](https://github.com/capocasa/nim-dav1d), by VideoLAN)
+* OPUS audio (decoded by [libopus](https://github.com/capocasa/nin-opus), by Xiphophorus
 
 Note that AV1 support is unofficial, but it is widely considered only a formality at this point.
 
