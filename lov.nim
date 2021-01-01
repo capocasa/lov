@@ -37,7 +37,7 @@ var
     ## A module-scope channel used by the demuxer-decoder to
     ## communicate with the presenter thread
 
-proc demucode(filename: string) {.thread} =
+proc demuc(filename: string) {.thread} =
   ## The demuxer-decoder- opens up a file, demuxes it into its packets,
   ## decodes those appropriately, and sends the decoded data to the
   ## presenter thread via a channel so it can be shown. Tells the presenter
@@ -196,11 +196,11 @@ presenter.createThread(present)
   # create a presentation thread that will wait for data to 
   # show via SDL
 
-var demucoder:Thread[string]
-demucoder.createThread(demucode, "resources/test.webm")
+var demucer:Thread[string]
+demucer.createThread(demuc, "resources/test.webm")
   # start demuxing and decoding- the demuxer-decoder will tell the presenter what to show via the channel
 
-demucoder.joinThread()
+demucer.joinThread()
 
 channel.close()
 
