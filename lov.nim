@@ -1,4 +1,5 @@
 
+import os
 import sdl2, sdl2/[audio]
 import dav1d, nestegg, opus
 
@@ -188,19 +189,30 @@ proc present() {.thread} =
       if r != 0:
         raise newException(IOError, $getError())
 
-channel.open(queueSize)
-  # open a channel to communicate with a presentation thread
+if isMainModule:
 
-var presenter:Thread[void]
-presenter.createThread(present)
-  # create a presentation thread that will wait for data to 
-  # show via SDL
+  assert paramCount() == 1, "please specify file to play on command line"
+  case paramStr(1):
+  of "--help":
+    echo "Usage: lov [video.webm]"
+    echo ""
+    echo "video.webm must be an av1/opus-s16/webm video file"
+  else:
+    let filename = paramStr(1)
 
-var demucer:Thread[string]
-demucer.createThread(demuc, "resources/test.webm")
-  # start demuxing and decoding- the demuxer-decoder will tell the presenter what to show via the channel
+    channel.open(queueSize)
+      # open a channel to communicate with a presentation thread
 
-demucer.joinThread()
+    var presenter:Thread[void]
+    presenter.createThread(present)
+      # create a presentation thread that will wait for data to 
+      # show via SDL
 
-channel.close()
+    var demucer:Thread[string]
+    demucer.createThread(demuc, filename)
+      # start demuxing and decoding- the demuxer-decoder will tell the presenter what to show via the channel
+
+    demucer.joinThread()
+
+    channel.close()
 

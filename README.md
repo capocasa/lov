@@ -19,7 +19,7 @@ It does work well enough that I would consider it suitable as a starting point f
 [x] webm demuxing
 [x] av1 video decoding
 [x] opus audio decoding
-[ ] Basic command-line usage
+[x] Basic command-line usage
 [ ] Good High-level library interface
 [ ] Library documentation
 [ ] Pause, play, pause and seek
@@ -40,7 +40,7 @@ Usage as command-line tool
 --------------------------
 
 ```
-$ lov myFile.webm
+$ lov resources/test.webm
 
 # That's it, it will open an SDL window of appropriate size and play the file.
 ```
