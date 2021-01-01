@@ -16,25 +16,25 @@ lov is, right now, a preview release. It works fine at what it does but misses m
 
 It does work well enough that I would consider it suitable as a starting point for integrating the wrapped libraries into your own application- copy-paste the demuxer-decoder and presenter threads and integrate them with your needs.
 
-[x] webm demuxing
-[x] av1 video decoding
-[x] opus audio decoding
-[x] Basic command-line usage
-[ ] Good High-level library interface
-[ ] Library documentation
-[ ] Pause, play, pause and seek
-[ ] Resizing and fullscreen
-[x] Testing on linux
-[ ] Testing on OSX
-[ ] Testing on Windows
-[ ] Testing on iOs
-[ ] Testing on Android
-[ ] Testing on wasm
-[ ] Testing on asm.js
-[ ] Compatibility with Nim 1.0
-[ ] Continuous integration on linux
-[ ] Address long-term audio-video drift
-[ ] Get rid of 1ms video frame jitter
+- [x] webm demuxing
+- [x] av1 video decoding
+- [x] opus audio decoding
+- [x] Basic command-line usage
+- [ ] Good High-level library interface
+- [ ] Library documentation
+- [ ] Pause, play, pause and seek
+- [ ] Resizing and fullscreen
+- [x] Testing on linux
+- [ ] Testing on OSX
+- [ ] Testing on Windows
+- [ ] Testing on iOs
+- [ ] Testing on Android
+- [ ] Testing on wasm
+- [ ] Testing on asm.js
+- [ ] Compatibility with Nim 1.0
+- [ ] Continuous integration on linux
+- [ ] Address long-term audio-video drift
+- [ ] Get rid of 1ms video frame jitter
 
 Usage as command-line tool
 --------------------------
