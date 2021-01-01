@@ -90,4 +90,7 @@ of the input file and resize to 720p:
 
 The fastest available AV1 encoder is used with this command, but the encoding process is still on the slow end compared to other codecs- this appears to be the price of the size-quality ration achieved with AV1.
 
+Video credit
+------------
 
+Test data from [Showreel by Anne Roemeth](https://vimeo.com/292581643). Used with permission.
