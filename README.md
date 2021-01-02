@@ -19,6 +19,8 @@ It does work well enough that I would consider it suitable as a starting point f
 - [x] webm demuxing
 - [x] av1 video decoding
 - [x] opus audio decoding
+- [x] thread safety
+- [x] Automatic memory management
 - [x] Basic command-line usage
 - [ ] Good High-level library interface
 - [ ] Library documentation
