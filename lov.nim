@@ -27,6 +27,7 @@ if isMainModule:
     var
       width = demuxer.videoParams.width
       height = demuxer.videoParams.height
+
     var window = createWindow("lov", 100, 100, 100 + width.cint, 1 + height.cint, SDL_WINDOW_SHOWN)
     if window == nil:
       raise newException(IOError, $getError())
@@ -49,9 +50,7 @@ if isMainModule:
     discard renderer.copy(texture, nil, nil)
     renderer.present()
 
-    var player = newPlayer(demuxer, texture, audioDevice)
-
-    delay 2000
+    var player = newPlayer(demuxer, window, texture, audioDevice)
 
     delay 500
 

@@ -7,53 +7,71 @@ const
   queueSize = 5
 
 type
-  DecodedKind* = enum
-    dkAudio
-    dkVideo
-  Decoded = object
-    ## Decoded data objects that can be sent to the presnter
-    ## thread by the demuxer-decoder
-    ## Can contain a decoded video frame, some decoded audio
-    ## samples, or nothing, if it's time to quit
-    case kind: DecodedKind 
-    of dkVideo:
-      picture: Picture
-        ## Decoded data is a dav1d format YUV picture
-    of dkAudio:
-      samples: Samples
-        ## Decoded data is PCM audio samples
-  PlayerObj* = object
-    ## High level playback object, takes a webm file to read from
-    ## and a texture and audio device to write to
+  IOObj* = object
     demuxer*: Demuxer
     opusDecoder*: opus.Decoder
     av1Decoder*: dav1d.Decoder
-    renderer*: RendererPtr
     audioDevice*: AudioDeviceID
     texture*: TexturePtr
-    channel: ptr Channel[Decoded]
-      ## A channel used by the demuxer-decoder thread to
-      ## send packets of decoded data to the presenter thread
-    decmux: Thread[Player]
-    present: Thread[Player]
+    renderer*: RendererPtr
+  IO* = ptr IOObj
+  MessageKind* = enum
+    msgAudio
+    msgVideo
+    msgInit
+    msgDone
+  Message = object
+    ## Message and other data objects that can be sent to the presenter
+    ## thread by the demuxer-decoder
+    ## Can contain a message video frame, some message audio
+    ## samples, init data, or nothing if it's time to quit
+    case kind: MessageKind
+    of msgVideo:
+      picture: Picture
+        ## Message data is a dav1d format YUV picture
+    of msgAudio:
+      samples: Samples
+        ## Message data is PCM audio samples
+    of msgInit:
+      io: IO
+    of msgDone:
+      discard
+  PlayerObj* = object
+    ## High level playback object, takes a webm file to read from
+    ## and a texture and audio device to write to
+    decmux: Thread[ptr Channel[Message]]
+    present: Thread[ptr Channel[Message]]
+    channel: Channel[Message]
+    channel2: Channel[Message]
+    io: IO
   Player* = ref PlayerObj
 
-proc decmux(player: Player) {.thread} =
+proc decmux(channel: ptr Channel[Message]) {.thread} =
   ## The demuxer-decoder thread- opens up a file, demuxes it into its packets,
-  ## decodes those appropriately, and sends the decoded data to the
+  ## decodes those appropriately, and sends the message data to the
   ## presenter thread via a channel so it can be shown. Tells the presenter
   ## thread to quit when it's done.
+  
+  echo "decmux"
 
-  for packet in player.demuxer:
+  var initMsg = channel[].recv()
+  var io = initMsg.io
+  echo $io.audioDevice
+  echo "decmux init"
+
+  channel[].send(initMsg)
+
+  for packet in io.demuxer:
 
     case packet.track.kind:
     of tkAudio:
       case packet.track.audioCodec:
       of acOpus:
         for chunk in packet:
-          var decoded = Decoded(kind: dkAudio)
-          decoded.samples = player.opusDecoder.decode(chunk.data, chunk.len)
-          player.channel[].send(decoded)
+          var message = Message(kind: msgAudio)
+          message.samples = io.opusDecoder.decode(chunk.data, chunk.len)
+          channel[].send(message)
+          echo "send audio"
       else:
         raise newException(ValueError, "codec $# not supported" % $packet.track.audioCodec)
     of tkVideo:
@@ -61,20 +79,21 @@ proc decmux(player: Player) {.thread} =
       of vcAv1:
         for chunk in packet:
           try:
-            player.av1Decoder.send(chunk.data, chunk.len)
+            io.av1Decoder.send(chunk.data, chunk.len)
           except BufferError:
             # TODO: handle
             raise getCurrentException()
 
           # video decode and delay for timing source
-          var decoded = Decoded(kind: dkVideo)
+          var message = Message(kind: msgVideo)
           try:
-            decoded.picture = player.av1Decoder.getPicture()
+            message.picture = io.av1Decoder.getPicture()
           except BufferError:
             # TODO: handle
             raise getCurrentException()
           
-          player.channel[].send(decoded)
+          echo "send video"
+          channel[].send(message)
       else:
         # TODO: handle unknown packet codec
         discard
@@ -82,19 +101,20 @@ proc decmux(player: Player) {.thread} =
       # TODO: handle packet
       discard
 
-proc present(player: Player) {.thread} =
+  channel[].send(Message(kind: msgDone))
+
+proc present(channel: ptr Channel[Message]) {.thread} =
   ## A thread procedure that waits for messages from the demuxer that contain either
-  ## decoded data to display or a quit message.
+  ## message data to display or a quit message.
   ## If no data comes, then the presenter does nothing, playing back silence or freezing
-  ## at the last decoded frame.
+  ## at the last message frame.
+  
+  echo "present"
 
   # initialize all needed SDL objects
-  discard sdl2.init(INIT_EVERYTHING)
+  
   var
-    texture = player.texture
-    renderer = player.renderer
-    channel = player.channel
-
+    io: IO
     perfsPerSecond: uint64
     perfsPerFrame: uint64
     remainingPerfsInFrame: uint64
@@ -126,17 +146,17 @@ proc present(player: Player) {.thread} =
   # packets from the demuxer, and present them
   while true:
     # wait for a message containing a demuxed packet
-    let decoded = player.channel[].recv()
+    let message = channel[].recv()
 
-    case decoded.kind:
+    case message.kind:
 
-    of dkVideo:
-      echo "video frame"
+    of msgVideo:
       # a video frame arrives, display it and wait
       # until it's the right time- then show it
-      texture.update(decoded.picture)
-      discard renderer.clear()
-      discard renderer.copy(texture, nil, nil)
+      echo "receive video"
+      io.texture.update(message.picture)
+      discard io.renderer.clear()
+      discard io.renderer.copy(io.texture, nil, nil)
       currentTimeInPerfs = getPerformanceCounter()
       if nextFrameInPerfs < currentTimeInPerfs:
         # TODO: handle frame slowdown
@@ -147,46 +167,66 @@ proc present(player: Player) {.thread} =
         # calculate 
       delay remainingMsInFrame.uint32
         # actually wait
-      renderer.present()
+      io.renderer.present()
         # show  the frame
       nextFrameInPerfs += perfsPerFrame
         # make a note when it's time for the next frame
 
-    of dkAudio:
-      echo "audio frame"
+    of msgAudio:
       # an audio packet has arrived. queue it, that's all
       # TODO: handle potential drift between audio clock
       # and wherever getPerformanceCounter gets is timing
       # for very long video
-      let r = player.audioDevice.queueAudio(decoded.samples.data, decoded.samples.bytes.uint32)
+      echo "receive audio"
+      let r = io.audioDevice.queueAudio(message.samples.data, message.samples.bytes.uint32)
       if r != 0:
         raise newException(IOError, $getError())
+    of msgInit:
+      echo "receive init"
+      io = message.io
+      echo $io.audioDevice
+
+      discard io.renderer.clear()
+      discard io.renderer.copy(io.texture, nil, nil)
+      io.renderer.present()
+    of msgDone:
+      echo "receive done"
+      break
 
 proc cleanup*(player: Player) =
-  player.channel[].close()
-  player.channel.deallocShared
+  #player.channel[].close()
+  #player.channel.deallocShared
+  discard
 
-proc newPlayer*(demuxer: Demuxer, texture: TexturePtr, audioDevice: AudioDeviceID): Player =
+proc newPlayer*(demuxer: Demuxer, window: WindowPtr, texture: TexturePtr, audioDevice: AudioDeviceID): Player =
+
+  #result = cast[Player](allocShared(sizeof(PlayerObj)))
   new(result, cleanup)
-  result.channel = cast[ptr Channel[Decoded]](allocShared0(sizeof(Channel[Decoded])))
+
+  result.io = cast[IO](allocShared0(sizeof(IOObj)))
 
   # store components
-  result.demuxer = demuxer
-  result.texture = texture
-  result.audioDevice = audioDevice
+  result.io.demuxer = demuxer
+  result.io.texture = texture
+  result.io.audioDevice = audioDevice
+
+  echo "new A: ", $audioDevice
+  echo "new IO.A: ", $result.io.audioDevice
 
   # initialize components
-  result.av1Decoder = dav1d.newDecoder()
+  result.io.av1Decoder = dav1d.newDecoder()
     # video decoder (no destruction required)
-  result.opusDecoder = opus.newDecoder(sr48k, chStereo)
+  result.io.opusDecoder = opus.newDecoder(sr48k, chStereo)
     # audio decoder (no destruction required)
-  result.channel[].open(queueSize)
-    # open a channel to communicate with a presentation thread
 
-  result.decmux.createThread(decmux, result)
+  result.channel.open(queueSize)
+
+  result.decmux.createThread(decmux, result.channel.addr)
     # start demuxing and decoding- the demuxer-decoder will tell the presenter what to show via the channel
+  result.present.createThread(present, result.channel.addr)
 
-  result.present.createThread(present, result)
+  result.channel.send(Message(kind: msgInit, io: result.io))
+
   result.present.joinThread()
 
 #proc play*(player: Player) =
