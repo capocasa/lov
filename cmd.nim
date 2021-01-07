@@ -35,15 +35,16 @@ if 0.SDL_return < sdl2.init(INIT_EVERYTHING):
   raise newException(IOError, $getError())
 
 var
-  width = demuxer.videoParams.width
-  height = demuxer.videoParams.height
+  width = demuxer.firstVideo.videoParams.width
+  height = demuxer.firstVideo.videoParams.height
+  fps = demuxer.firstVideo.fps
 
 var window = createWindow("lov", 100, 100, 100 + width.cint, 1 + height.cint, SDL_WINDOW_SHOWN)
 if window == nil:
   raise newException(IOError, $getError())
 
 # initialize SDL audio
-let audioBufferSize = uint16((1.0 / 25) * demuxer.audioParams.rate.float * demuxer.audioParams.channels.float)
+let audioBufferSize = uint16((1.0 / fps) * demuxer.firstAudio.audioParams.rate.float * demuxer.firstAudio.audioParams.channels.float)
 let requested = AudioSpec(freq: 48000.cint, channels: 2.uint8, samples: audioBufferSize, format: AUDIO_S16LSB)
 var obtained = AudioSpec()
 let audioDevice = openAudioDevice(nil, 0, requested.unsafeAddr, obtained.unsafeAddr, 0)
@@ -56,7 +57,7 @@ let renderer = createRenderer(window, -1, RendererAccelerated or RendererPresent
 if renderer == nil:
   raise newException(IOError, $getError())
 
-# creat texture, the video will render to this 
+# create texture, the video will render to this 
 let texture = createTexture(renderer, SDL_PIXELFORMAT_IYUV, SDL_TEXTUREACCESS_STREAMING, width.cint, height.cint)
 
 discard renderer.clear()
@@ -73,8 +74,7 @@ var
   fpsman: FpsManager
 
 fpsman.init
-if 0.SDL_return != fpsman.setFramerate(25):
-  raise newException(IOError, $getError())
+fpsman.setFramerate(fps)
 
 while run:
 

@@ -1,4 +1,12 @@
-import sdl2
+import math
+import sdl2, sdl2/[gfx]
+
+proc setFramerate*(manager: var FpsManager, rate: float) =
+  if rate < FPS_LOWER_LIMIT or rate > FPS_UPPER_LIMIT:
+    raise newException(RangeDefect, "framerate must be between $# and $#" % [$FPS_LOWER_LIMIT, $FPS_UPPER_LIMIT])
+  manager.framecount = 0
+  manager.rate = round(rate).cint
+  manager.rateticks = 1000.0 * round(rate) / (rate * rate)
 
 when not defined(SDL_Static):
   {.push callConv: cdecl, dynlib: LibName.}
