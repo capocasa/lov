@@ -49,6 +49,7 @@ var obtained = AudioSpec()
 let audioDevice = openAudioDevice(nil, 0, requested.unsafeAddr, obtained.unsafeAddr, 0)
 if audioDevice == 0:
   raise newException(IOError, $getError())
+audioDevice.pauseAudioDevice(0)
 
 # create SDL renderer
 let renderer = createRenderer(window, -1, RendererAccelerated or RendererPresentVsync)
