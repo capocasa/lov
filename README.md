@@ -37,6 +37,9 @@ It does work well enough that I would consider it suitable as a starting point f
 - [ ] Continuous integration on linux
 - [ ] Address long-term audio-video drift
 - [ ] Get rid of 1ms video frame jitter
+- [ ] Get rid of sdl2 dependency for library-only build*
+
+* seems to depend on [nimble optional-dependencies](https://github.com/nim-lang/nimble/issues/506) feature
 
 Usage as command-line tool
 --------------------------
@@ -50,16 +53,33 @@ $ lov resources/test.webm
 Usage as library
 ----------------
 
-The heart of lov is the demuxer-decoder, a simple iterator that you call with a file name and then receive audio and video packets from.
+The heart of lov is the threaded demuxer-decoder that you call with a file name and then receive audio and video packets from an exposed Nim Channel.
 
-The second important component is the presenter that displays buffered frames at the correct time and queues audio. The two threads are
-glued together using standard Nim channels.
+```
+var l = newLov("myfile.webm")
 
-Currently, the author has not figured out yet how to set up such a threaded pipeline without being unduly limiting- you could be using
-weave for threads, or your own finely-tuned SDL setup, or prefer your own data structures. It is therefore currently recommended to
-copy-paste relevant portions of lov code into your application and adapt them to your unique needs.
+var run = true
+while run:
 
-There are, however, some higher level functions to be extracted that can be exposed as a library- those are planned to be.
+  # wait for a packet containing a demuxed packet
+  let packet = l.packet[].recv()
+
+  case packet.kind:
+
+  of pktVideo:
+    handleVideoData(packet.picture)
+
+  of pktAudio:
+    handleAudioSamples(packet.samples)
+
+  of pktDone:
+    run = false
+
+```
+
+Please see the lov command line tool in `cmd.nim` for a full SDL2 example of the decoder-demuxer. Note that programs must be compiled with --threads=on to use the lov library.
+
+Further, note that the lov library does not depend on sdl2- the command-line tool does.
 
 File Format
 -----------
