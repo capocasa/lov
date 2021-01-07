@@ -1,63 +1,132 @@
 
-import os
-import sdl2, sdl2/[audio]
+import os, strutils
 import dav1d, nestegg, opus
 
-import lov/player
+type
+  PacketKind* = enum
+    pktAudio
+    pktVideo
+    pktDone
+  Packet* = object
+    ## Packet and other data objects that can be sent to the presenter
+    ## thread by the demuxer-decoder
+    ## Can contain a packet video frame, some packet audio
+    ## samples, init data, or nothing if it's time to quit
+    case kind*: PacketKind
+    of pktVideo:
+      picture*: Picture
+        ## Packet data is a dav1d format YUV picture
+    of pktAudio:
+      samples*: Samples
+        ## Packet data is PCM audio samples
+    of pktDone:
+      discard
+  LovObj* = object
+    demuxer*: Demuxer
+    opusDecoder*: opus.Decoder
+    av1Decoder*: dav1d.Decoder
+    control*: ptr Channel[Control]
+      # this must be a pointer to pass it to
+      # the demuxer channel- the rest of this object
+      # is passed via that channel so can be
+      # garbage collected
+      # consider this a hack
+    packet*: ptr Channel[Packet]
+    decmux: Thread[ptr Channel[Control]]
+  Lov* = ref LovObj
+  ControlKind* = enum
+    cInit
+    cPlay
+    cPause
+    cSeek
+  Control = object
+    case kind: ControlKind
+    of cInit:
+      decmuxInit: DecmuxInit
+    of cSeek:
+      position: Natural
+    else:
+      discard
+  DecmuxInit* = tuple[demuxer: Demuxer, av1Decoder: dav1d.Decoder, opusDecoder: opus.Decoder, packet: ptr Channel[Packet]]
 
-export Player
-
-if isMainModule:
-
-  assert paramCount() == 1, "please specify file to play on command line"
-  case paramStr(1):
-  of "--help":
-    echo "Usage: lov [video.webm]"
-    echo ""
-    echo "video.webm must be an av1/opus-s16/webm video file"
+proc decmux*(control: ptr Channel[Control]) {.thread} =
+  ## The demuxer-decoder thread- opens up a file, demuxes it into its packets,
+  ## decodes those appropriately, and sends the packet data to the
+  ## presenter thread via a channel so it can be shown. Tells the presenter
+  ## thread to quit when it's done.
+  
+  var c = control[].recv()
+  var decmuxInit: DecmuxInit
+  case c.kind:
+  of cInit:
+    decmuxInit = c.decmuxInit
   else:
-    let filename = paramStr(1)
-    let file = open(filename)
-    let demuxer = newDemuxer(file)
+    raise newException(AssertionDefect, "Must init demuxer thread before sending other messages")
 
-    # init SDL
-    let r = sdl2.init(INIT_EVERYTHING)
-    if r.int < 0:
-      raise newException(IOError, $getError())
-    var
-      width = demuxer.videoParams.width
-      height = demuxer.videoParams.height
+  for packet in decmuxInit.demuxer:
 
-    var window = createWindow("lov", 100, 100, 100 + width.cint, 1 + height.cint, SDL_WINDOW_SHOWN)
-    if window == nil:
-      raise newException(IOError, $getError())
+    case packet.track.kind:
+    of tkAudio:
+      case packet.track.audioCodec:
+      of acOpus:
+        for chunk in packet:
+          var packet = Packet(kind: pktAudio)
+          packet.samples = decmuxInit.opusDecoder.decode(chunk.data, chunk.len)
+          decmuxInit.packet[].send(packet)
+      else:
+        raise newException(ValueError, "codec $# not supported" % $packet.track.audioCodec)
+    of tkVideo:
+      case packet.track.videoCodec:
+      of vcAv1:
+        for chunk in packet:
+          try:
+            decmuxInit.av1Decoder.send(chunk.data, chunk.len)
+          except BufferError:
+            # TODO: handle
+            raise getCurrentException()
 
-    # initialize audio
-    let audioBufferSize = uint16((1.0 / 25) * demuxer.audioParams.rate.float * demuxer.audioParams.channels.float)
-    let requested = AudioSpec(freq: 48000.cint, channels: 2.uint8, samples: audioBufferSize, format: AUDIO_S16LSB)
-    var obtained = AudioSpec()
-    let audioDevice = openAudioDevice(nil, 0, requested.unsafeAddr, obtained.unsafeAddr, 0)
-    if audioDevice == 0:
-      raise newException(IOError, $getError())
+          # video decode and delay for timing source
+          var packet = Packet(kind: pktVideo)
+          try:
+            packet.picture = decmuxInit.av1Decoder.getPicture()
+            var y = cast[ptr UncheckedArray[byte]](packet.picture.raw.data[0])
+          except BufferError:
+            # TODO: handle
+            raise getCurrentException()
 
-    let renderer = createRenderer(window, -1, RendererAccelerated or RendererPresentVsync)
-    if renderer == nil:
-      raise newException(IOError, $getError())
+          decmuxInit.packet[].send(packet)
+      else:
+        # TODO: handle unknown packet codec
+        discard
+    else:
+      # TODO: handle packet
+      discard
 
-    let texture = createTexture(renderer, SDL_PIXELFORMAT_IYUV, SDL_TEXTUREACCESS_STREAMING, width.cint, height.cint)
+  decmuxInit.packet[].send(Packet(kind: pktDone))
 
-    discard renderer.clear()
-    discard renderer.copy(texture, nil, nil)
-    renderer.present()
+proc cleanup*(lov: Lov) =
+  deallocShared(lov.control)
+  deallocShared(lov.packet)
 
-    var player = newPlayer(demuxer, window, texture, audioDevice)
+proc newLov*(demuxer: Demuxer, queueSize = 5): Lov =
+  new(result, cleanup)
+  result.demuxer = demuxer
+  result.av1Decoder = dav1d.newDecoder()
+  result.opusDecoder = opus.newDecoder(sr48k, chStereo)
+    # opus is supposed to decode at 48k stereo and then downsample and/or downmix
 
-    delay 500
+  result.control = cast[ptr Channel[Control]](allocShared0(sizeof(Channel[Control])))
+  result.packet = cast[ptr Channel[Packet]](allocShared0(sizeof(Channel[Packet])))
+    # this gets cleaned up with function above
+  result.control[].open(1)
+  result.packet[].open(queueSize)
+    # todo: buffer control messages and drop the right ones
+  result.decmux.createThread(decmux, result.control)
 
-    file.close
-
-    destroy(renderer)
-    destroy(texture)
-    audioDevice.closeAudioDevice
-    sdl2.quit()
+  result.control[].send(Control(kind: cInit, decmuxInit: (
+    demuxer: result.demuxer,
+    av1Decoder: result.av1Decoder,
+    opusDecoder: result.opusDecoder,
+    packet: result.packet
+  )))
 
