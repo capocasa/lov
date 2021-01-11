@@ -5,7 +5,7 @@ author        = "Carlo Capocasa"
 description   = "lov is the latest open video, a simplified, portable video player for webm/av1/opus"
 license       = "2BSD"
 installExt    = @["nim"]
-namedBin["cmd"] = "lov"
+namedBin["play"] = "lov"
 
 # Dependencies
 
