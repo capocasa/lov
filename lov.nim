@@ -37,8 +37,6 @@ type
   Lov* = ref LovObj
   ControlKind = enum
     cInit
-    cPlay
-    cPause
     cSeek
   Control = object
     case kind: ControlKind
@@ -46,8 +44,6 @@ type
       decmuxInit: DecmuxInit
     of cSeek:
       timestamp: uint64
-    else:
-      discard
   DecmuxInit* = tuple[demuxer: Demuxer, av1Decoder: dav1d.Decoder, opusDecoder: opus.Decoder, packet: ptr Channel[Packet], control: ptr Channel[Control]]
 
 proc decmux*(control: ptr Channel[Control]) {.thread} =
@@ -115,11 +111,19 @@ proc decmux*(control: ptr Channel[Control]) {.thread} =
             # flush channel buffer
             discard
           decmuxInit.demuxer.seek(control.timestamp)
-        else:
-          discard
+        of cInit:
+          raise newException(Defect, "already initialized")
   
     decmuxInit.packet[].send(Packet(kind: pktDone))
-    # decmuxInit.control[].recv(Packet(kind: cReload))
+    while true:
+      let control = decmuxInit.control[].recv()
+      case control.kind:
+      of cSeek:
+        decmuxInit.av1Decoder.flush()
+        decmuxInit.demuxer.seek(control.timestamp)
+        break
+      of cInit:
+        raise newException(Defect, "already initialized")
 
 proc cleanup*(lov: Lov) =
   deallocShared(lov.control)
