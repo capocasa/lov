@@ -2,17 +2,24 @@
 lov
 ===
 
-lov stands for the "latest open video" and is a minimalistic SDL video player library. It is deliberately monolithic and restricted to a single file format to simplify it as much as possible while retaining enough functionality to be used for where the application author has control over the content authoring process.
+lov stands for the "latest open video" and is a minimalistic SDL video player library.
 
-Design criteria
----------------
+Why lov?
+--------
 
-I wanted modern video for the [nimx cross-platform app framework](https://github.com/yglukhov/nimx), which meant that all code used needs to portable across all nimx targets- Linux, OSX, Windows, iOS, Android and Emscripten (but not js)- and legally compatible. This calls for simple, proven, high-performance libraries written in C. I further wanted the interface to be as Nim-flavored as possible, which implies low-cost high level language features, thread-safety and automatic memory management.
+Lov is primarily intended to be used as a video playback library within applications where the video authoring process can be controlled by the application author. Therefore, it only supports one video format: The best-performing one available without licensing restricitons, leveraging the fastest, smallest and most portable libraries available. At the time of writing, this is a webm container with av1 video and opus audio, wrangled by nestegg, libopus and dav1d, respectively.
+
+Lov provides a nim-flavored interface while making few extremely minor speed compromises.
+
+Performance
+-----------
+
+No formal benchmarks were done yet, however repeated manual measuring seems to indicate that lov performs 30%-50% better than mplayer, mpv or vlc on the same source file. I have no idea why- the same decoders are used by all players.
 
 Road map
 --------
 
-lov is, right now, a preview release. It works fine at what it does but misses most features commonly expected from a video player application.
+lov is, right now, a preview release. It works fine at what it does but misses features commonly expected from a video player application.
 
 It does work well enough that I would consider it suitable as a starting point for integrating the wrapped libraries into your own application- copy-paste the demuxer-decoder and presenter threads and integrate them with your needs.
 
@@ -25,7 +32,7 @@ It does work well enough that I would consider it suitable as a starting point f
 - [ ] Good High-level library interface
 - [ ] Library documentation
 - [ ] Pause, play, pause and seek
-- [ ] Resizing and fullscreen
+- [x] Resizing and fullscreen
 - [x] Testing on linux
 - [ ] Testing on OSX
 - [ ] Testing on Windows
@@ -35,7 +42,7 @@ It does work well enough that I would consider it suitable as a starting point f
 - [ ] Testing on asm.js
 - [ ] Compatibility with Nim 1.0
 - [ ] Continuous integration on linux
-- [ ] Address long-term audio-video drift
+- [ ] Evaluate possible long-term audio-video drift
 - [ ] Get rid of 1ms video frame jitter
 - [ ] Get rid of sdl2 dependency for library-only build*
 
@@ -49,6 +56,11 @@ $ lov resources/test.webm
 
 # That's it, it will open an SDL window of appropriate size and play the file.
 ```
+
+Once the lov player is running, it will play the duration of the file, and then end at the last frame. The player can be controlled using the following keys:
+
+| ESC / Q  | Exit the player   |
+| HOME     | Skip to beginning |
 
 Usage as library
 ----------------
@@ -113,6 +125,13 @@ of the input file and resize to 720p:
     ffmpeg -i input.mp4 -s 720x480 -ss 0:00:22.2 -t 0:00:22.8 -c:a libopus -sample_fmt s16 -c:v librav1e snipped.webm
 
 The fastest available AV1 encoder is used with this command, but the encoding process is still on the slow end compared to other codecs- this appears to be the price of the size-quality ration achieved with AV1.
+
+Design details 
+---------------
+
+I wanted modern video for the [nimx cross-platform app framework](https://github.com/yglukhov/nimx), which meant that all code used needs to portable across all nimx targets- Linux, OSX, Windows, iOS, Android and Emscripten (but not js)- and legally compatible. This calls for simple, proven, high-performance libraries written in C. I further wanted the interface to be as Nim-flavored as possible, which implies low-cost high level language features, thread-safety and automatic memory management.
+
+A few minor speed compromises are made: C-allocated objects are wrapped into Nim objects with Nim references, using finalizers to free them. The price of this is double indirection- one for the ref, one for the ptr. This does not seem to have a noticable impact on performance, but may be of concern on the lowest end systems. Another compomise was made with eager initialization: When a C library offers accessor functions to a struct, those are eagerly copied into the Nim container at initialization time. This, too, does not seem to noticably affect performance.
 
 Video credit
 ------------
