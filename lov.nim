@@ -21,20 +21,21 @@ type
         ## Packet data is PCM audio samples
     of pktDone:
       discard
+    timestamp*: uint64
   LovObj* = object
     demuxer*: Demuxer
     opusDecoder*: opus.Decoder
     av1Decoder*: dav1d.Decoder
-    control*: ptr Channel[Control]
+    control: ptr Channel[Control]
       # this must be a pointer to pass it to
       # the demuxer channel- the rest of this object
       # is passed via that channel so can be
       # garbage collected
       # consider this a hack
-    packet*: ptr Channel[Packet]
+    packet: ptr Channel[Packet]
     decmux: Thread[ptr Channel[Control]]
   Lov* = ref LovObj
-  ControlKind* = enum
+  ControlKind = enum
     cInit
     cPlay
     cPause
@@ -44,10 +45,10 @@ type
     of cInit:
       decmuxInit: DecmuxInit
     of cSeek:
-      position: Natural
+      timestamp: uint64
     else:
       discard
-  DecmuxInit* = tuple[demuxer: Demuxer, av1Decoder: dav1d.Decoder, opusDecoder: opus.Decoder, packet: ptr Channel[Packet]]
+  DecmuxInit* = tuple[demuxer: Demuxer, av1Decoder: dav1d.Decoder, opusDecoder: opus.Decoder, packet: ptr Channel[Packet], control: ptr Channel[Control]]
 
 proc decmux*(control: ptr Channel[Control]) {.thread} =
   ## The demuxer-decoder thread- opens up a file, demuxes it into its packets,
@@ -63,46 +64,62 @@ proc decmux*(control: ptr Channel[Control]) {.thread} =
   else:
     raise newException(AssertionDefect, "Must init demuxer thread before sending other messages")
 
-  for packet in decmuxInit.demuxer:
+  while true:
 
-    case packet.track.kind:
-    of tkAudio:
-      case packet.track.audioCodec:
-      of acOpus:
-        for chunk in packet:
-          var packet = Packet(kind: pktAudio)
-          packet.samples = decmuxInit.opusDecoder.decode(chunk.data, chunk.len)
-          decmuxInit.packet[].send(packet)
+    for packet in decmuxInit.demuxer:
+
+      case packet.track.kind:
+      of tkAudio:
+        case packet.track.audioCodec:
+        of acOpus:
+          for chunk in packet:
+            var decoded = Packet(kind: pktAudio)
+            decoded.samples = decmuxInit.opusDecoder.decode(chunk.data, chunk.len)
+            decoded.timestamp = packet.timestamp
+            decmuxInit.packet[].send(decoded)
+        else:
+          raise newException(ValueError, "codec $# not supported" % $packet.track.audioCodec)
+      of tkVideo:
+        case packet.track.videoCodec:
+        of vcAv1:
+          for chunk in packet:
+            try:
+              decmuxInit.av1Decoder.send(chunk.data, chunk.len)
+            except BufferError:
+              # TODO: handle
+              raise getCurrentException()
+
+            # video decode and delay for timing source
+            var decoded = Packet(kind: pktVideo)
+            try:
+              decoded.picture = decmuxInit.av1Decoder.getPicture()
+              decoded.timestamp = packet.timestamp
+              decmuxInit.packet[].send(decoded)
+            except BufferError:
+              # TODO: handle
+              raise getCurrentException()
+
+        else:
+          # TODO: handle unknown packet codec
+          discard
       else:
-        raise newException(ValueError, "codec $# not supported" % $packet.track.audioCodec)
-    of tkVideo:
-      case packet.track.videoCodec:
-      of vcAv1:
-        for chunk in packet:
-          try:
-            decmuxInit.av1Decoder.send(chunk.data, chunk.len)
-          except BufferError:
-            # TODO: handle
-            raise getCurrentException()
-
-          # video decode and delay for timing source
-          var packet = Packet(kind: pktVideo)
-          try:
-            packet.picture = decmuxInit.av1Decoder.getPicture()
-            var y = cast[ptr UncheckedArray[byte]](packet.picture.raw.data[0])
-          except BufferError:
-            # TODO: handle
-            raise getCurrentException()
-
-          decmuxInit.packet[].send(packet)
-      else:
-        # TODO: handle unknown packet codec
+        # TODO: handle packet
         discard
-    else:
-      # TODO: handle packet
-      discard
 
-  decmuxInit.packet[].send(Packet(kind: pktDone))
+      let (received, control) = decmuxInit.control[].tryRecv
+      if received:
+        case control.kind:
+        of cSeek:
+          decmuxInit.av1Decoder.flush()
+          while decmuxInit.packet[].tryRecv.dataAvailable:
+            # flush channel buffer
+            discard
+          decmuxInit.demuxer.seek(control.timestamp)
+        else:
+          discard
+  
+    decmuxInit.packet[].send(Packet(kind: pktDone))
+    # decmuxInit.control[].recv(Packet(kind: cReload))
 
 proc cleanup*(lov: Lov) =
   deallocShared(lov.control)
@@ -127,6 +144,17 @@ proc newLov*(demuxer: Demuxer, queueSize = 5): Lov =
     demuxer: result.demuxer,
     av1Decoder: result.av1Decoder,
     opusDecoder: result.opusDecoder,
-    packet: result.packet
+    packet: result.packet,
+    control: result.control
   )))
 
+proc getPacket*(lov: Lov): Packet =
+  ## Wait for a packet form the demuxer-decoder. A packet could be
+  ## a decoded frame of video, a decoded chunk of audio samples, or
+  ## a flag that demuxing-decoding is complete.
+  lov.packet[].recv()
+
+proc seek*(lov: Lov, timestamp: uint64) =
+  ## Instruct the demuxer-decoder to change its timestamp to the specified time
+  ## in nanoseconds.
+  lov.control[].send(Control(kind: cSeek, timestamp: timestamp))

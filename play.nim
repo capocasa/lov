@@ -2,18 +2,18 @@ import os
 import sdl2, sdl2/[audio, gfx], lov/sdl2_aux
 import lov, nestegg, dav1d, opus
 
-# aux function
+### aux function
 proc update(texture: TexturePtr, pic: Picture) =
   ## A helper function to streamingly update an SDL texture
   ## with a frame in dav1d's output format
-  if 0.SDL_return != updateYUVTexture(texture, nil,
+  if 0.SDL_Return != updateYUVTexture(texture, nil,
     cast[ptr byte](pic.raw.data[0]), pic.raw.stride[0].cint, # Y
     cast[ptr byte](pic.raw.data[1]), pic.raw.stride[1].cint, # U
     cast[ptr byte](pic.raw.data[2]), pic.raw.stride[1].cint  # V
   ):
     raise newException(ValueError, $getError())
 
-# init configuration from command line params
+### init configuration from command line params
 assert paramCount() == 1, "please specify file to play on command line"
 
 var filename:string
@@ -31,7 +31,7 @@ var file = filename.open
 var demuxer = newDemuxer(file)
 let l = newLov(demuxer)
 
-# init SDL
+### init SDL
 if 0.SDL_return < sdl2.init(INIT_EVERYTHING):
   raise newException(IOError, $getError())
 
@@ -50,8 +50,8 @@ var window = createWindow(
 if window == nil:
   raise newException(IOError, $getError())
 
-# create SDL renderer
 let renderer = createRenderer(window, -1, RendererAccelerated or RendererPresentVsync)
+  # create SDL renderer
 if renderer == nil:
   raise newException(IOError, $getError())
 
@@ -60,8 +60,8 @@ renderer.setDrawColor(0, 0, 0)
 discard renderer.setLogicalSize(demuxer.firstVideo.videoParams.width.cint, demuxer.firstVideo.videoParams.height.cint)
   # keep aspect ratio and handle window resizes
 
-# create texture, the video will render to this 
 let texture = createTexture(renderer, SDL_PIXELFORMAT_IYUV, SDL_TEXTUREACCESS_STREAMING, demuxer.firstVideo.videoParams.width.cint, demuxer.firstVideo.videoParams.height.cint)
+  # create texture, the video will render to this 
 
 if 0 != renderer.clear():
   raise newException(IOError, $getError())
@@ -75,13 +75,14 @@ if audioDevice == 0:
   raise newException(IOError, $getError())
 audioDevice.pauseAudioDevice(0)
 
-# present video frames and audio samples
+### present video frames and audio samples
 
 var
   run = true
   play = true
   evt = sdl2.defaultEvent
   fpsman: FpsManager
+  timestamp: culonglong
 
 fpsman.init
 fpsman.setFramerate(fps)
@@ -98,12 +99,16 @@ while run:
     of KeyDown:
       case evt.key.keysym.sym:
       of K_SPACE:
-        play = not play
+        # play = not play
+        if play:
+          play = false
+        else:
+          play = true
       of K_ESCAPE, K_Q:
         run = false
         break
-      of K_PAGEUP:
-        echo "should seek to zero"
+      of K_HOME:
+        l.seek(0)
       else:
         discard
     else:
@@ -112,15 +117,20 @@ while run:
   while play:
     # if playing, keep getting packets until next video frame
 
-    # wait for a packet containing a demuxed packet
-    let packet = l.packet[].recv()
+    let packet = l.getPacket()
+      # wait for a packet containing a demuxed packet
 
     case packet.kind:
 
     of pktVideo:
       # show a video frame from the queue
       # a new packet will be demuxed automagically to the channel queue
-      texture.update(packet.picture)
+      try:
+        texture.update(packet.picture)
+      except ValueError:
+        # TODO: warn
+        discard
+      timestamp = packet.timestamp
       break
 
     of pktAudio:
@@ -132,12 +142,9 @@ while run:
 
     of pktDone:
       play = false
-      break
 
   if 0 != renderer.clear():
     raise newException(IOError, $getError())
-  #if 0.SDL_Return != renderer.copyEx(texture, nil, targetRect.addr, 0, nil, SDL_FLIP_NONE):
-  #if 0.SDL_Return != renderer.copyEx(texture, nil, nil, 0, nil, SDL_FLIP_NONE):
   if 0.SDL_Return != renderer.copy(texture, nil, nil):
     raise newException(IOError, $getError())
   fpsman.delay
