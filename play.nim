@@ -23,6 +23,12 @@ of "--help":
   echo "Usage: lov [video.webm]"
   echo ""
   echo "video.webm must be an av1/opus-s16/webm video file"
+  echo ""
+  echo "During playback:"
+  echo ""
+  echo "SPACE      Start/Stop playback"
+  echo "ESC/Q      Exit"
+  echo "HOME       Skip to beginning"
   quit 127
 else:
   filename = paramStr(1)
