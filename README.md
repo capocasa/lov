@@ -19,7 +19,7 @@ No formal benchmarks were done yet, however repeated manual measuring seems to i
 Road map
 --------
 
-lov is, right now, a preview release. It works fine at what it does but misses features commonly expected from a video player application.
+lov is feature complete and supports a minimal set of features commonly required by a video player. It uses about 30% less cpu than mplayer but consume about 30% more memory, and seems to leak it.
 
 It does work well enough that I would consider it suitable as a starting point for integrating the wrapped libraries into your own application- copy-paste the demuxer-decoder and presenter threads and integrate them with your needs.
 
@@ -31,9 +31,9 @@ It does work well enough that I would consider it suitable as a starting point f
 - [x] Basic command-line usage
 - [ ] Good High-level library interface
 - [ ] Library documentation
-- [ ] Pause, play, pause and seek
-- [ ] Test for memory related crashes
-- [ ] Test for memory leaks
+- [x] Pause, play, pause and seek
+- [x] Test for memory related crashes
+- [ ] Fix memory leak
 - [x] Resizing and fullscreen
 - [x] Testing on linux
 - [ ] Testing on OSX
@@ -46,8 +46,9 @@ It does work well enough that I would consider it suitable as a starting point f
 - [ ] Continuous integration on linux
 - [ ] Evaluate possible long-term audio-video drift
 - [ ] Get rid of 1ms video frame jitter
+- [ ] Do nice performance tests
 - [ ] Get rid of sdl2 dependency for library-only build *
-- [ ] Test with ARC and ORC
+- [x] Test with ARC and ORC
 
 * seems to depend on [nimble optional-dependencies](https://github.com/nim-lang/nimble/issues/506) feature
 
