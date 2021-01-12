@@ -1,5 +1,3 @@
-
-import os, strutils
 import dav1d, nestegg, opus
 
 type
@@ -74,7 +72,7 @@ proc decmux*(control: ptr Channel[Control]) {.thread} =
             decoded.timestamp = packet.timestamp
             decmuxInit.packet[].send(decoded)
         else:
-          raise newException(ValueError, "codec $# not supported" % $packet.track.audioCodec)
+          raise newException(ValueError, "codec not supported: " & $packet.track.audioCodec)
       of tkVideo:
         case packet.track.videoCodec:
         of vcAv1:
