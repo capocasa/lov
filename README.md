@@ -33,6 +33,7 @@ It does work well enough that I would consider it suitable as a starting point f
 - [ ] Library documentation
 - [ ] Pause, play, pause and seek
 - [ ] Test for memory related crashes
+- [ ] Test for memory leaks
 - [x] Resizing and fullscreen
 - [x] Testing on linux
 - [ ] Testing on OSX
