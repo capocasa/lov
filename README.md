@@ -32,6 +32,7 @@ It does work well enough that I would consider it suitable as a starting point f
 - [ ] Good High-level library interface
 - [ ] Library documentation
 - [ ] Pause, play, pause and seek
+- [ ] Test for memory related crashes
 - [x] Resizing and fullscreen
 - [x] Testing on linux
 - [ ] Testing on OSX
@@ -44,7 +45,8 @@ It does work well enough that I would consider it suitable as a starting point f
 - [ ] Continuous integration on linux
 - [ ] Evaluate possible long-term audio-video drift
 - [ ] Get rid of 1ms video frame jitter
-- [ ] Get rid of sdl2 dependency for library-only build*
+- [ ] Get rid of sdl2 dependency for library-only build *
+- [ ] Test with ARC and ORC
 
 * seems to depend on [nimble optional-dependencies](https://github.com/nim-lang/nimble/issues/506) feature
 
