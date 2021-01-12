@@ -103,27 +103,35 @@ proc decmux*(control: ptr Channel[Control]) {.thread} =
         discard
 
       let (received, control) = decmuxInit.control[].tryRecv
+        ## Check if a seek was requested and handle it
       if received:
         case control.kind:
         of cSeek:
-          decmuxInit.av1Decoder.flush()
           while decmuxInit.packet[].tryRecv.dataAvailable:
             # flush channel buffer
             discard
           decmuxInit.demuxer.seek(control.timestamp)
+          decmuxInit.av1Decoder.flush()
+
         of cInit:
           raise newException(Defect, "already initialized")
-  
+
     decmuxInit.packet[].send(Packet(kind: pktDone))
-    while true:
-      let control = decmuxInit.control[].recv()
-      case control.kind:
-      of cSeek:
-        decmuxInit.av1Decoder.flush()
-        decmuxInit.demuxer.seek(control.timestamp)
-        break
-      of cInit:
-        raise newException(Defect, "already initialized")
+      # notify demuxing has completed
+
+    let control = decmuxInit.control[].recv()
+      # Wait for a seek, rather than merely checking for a seek with tryRecv,
+      # because there is no demuxing so nothing else to do while we wait
+    case control.kind:
+    of cSeek:
+      while decmuxInit.packet[].tryRecv.dataAvailable:
+        # flush channel buffer
+        discard
+      decmuxInit.demuxer.seek(control.timestamp)
+      decmuxInit.av1Decoder.flush()
+    of cInit:
+      raise newException(Defect, "already initialized")
+
 
 proc cleanup*(lov: Lov) =
   deallocShared(lov.control)

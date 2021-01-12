@@ -86,6 +86,7 @@ audioDevice.pauseAudioDevice(0)
 var
   run = true
   play = true
+  done = false
   evt = sdl2.defaultEvent
   fpsman: FpsManager
   timestamp: culonglong
@@ -94,10 +95,11 @@ fpsman.init
 fpsman.setFramerate(fps)
 
 while run:
-  var
-    targetRect = rect(0.cint, 0.cint, demuxer.firstVideo.videoParams.width.cint, demuxer.firstVideo.videoParams.height.cint)
-
   while pollEvent(evt):
+    const
+      smallSkip = 1_000_000
+      mediumSkip = 10_000_000
+      largeSkip = 60_000_000
     case evt.kind:
     of QuitEvent:
       run = false
@@ -105,22 +107,42 @@ while run:
     of KeyDown:
       case evt.key.keysym.sym:
       of K_SPACE:
-        # play = not play
+        play = not play
+        #[
         if play:
           play = false
         else:
           play = true
+        ]#
       of K_ESCAPE, K_Q:
         run = false
         break
       of K_HOME:
         l.seek(0)
+        done = false
+      of K_LEFT:
+        l.seek(if timestamp < smallskip: 0.uint64 else: timestamp - smallSkip)
+        done = false
+      of K_RIGHT:
+        l.seek(timestamp + smallSkip)
+      of K_DOWN:
+        l.seek(if timestamp < mediumskip: 0.uint64 else: timestamp - mediumSkip)
+        done = false
+      of K_UP:
+        l.seek(timestamp + mediumSkip)
+        done = false
+      of K_PAGEDOWN:
+        l.seek(if timestamp < largeskip: 0.uint64 else: timestamp - largeSkip)
+        done = false
+      of K_PAGEUP:
+        l.seek(timestamp + largeSkip)
+        done = false
       else:
         discard
     else:
       discard
 
-  while play:
+  while play and not done:
     # if playing, keep getting packets until next video frame
 
     let packet = l.getPacket()
@@ -134,7 +156,7 @@ while run:
       try:
         texture.update(packet.picture)
       except ValueError:
-        # TODO: warn
+        # TODO: warn or handle
         discard
       timestamp = packet.timestamp
       break
@@ -147,7 +169,7 @@ while run:
         raise newException(IOError, $getError())
 
     of pktDone:
-      play = false
+      done = true
 
   if 0 != renderer.clear():
     raise newException(IOError, $getError())
