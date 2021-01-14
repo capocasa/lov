@@ -2,17 +2,6 @@ import os
 import sdl2, sdl2/[audio, gfx], lov/sdl2_aux
 import lov, nestegg, dav1d, opus
 
-### aux function
-proc update(texture: TexturePtr, pic: Picture) =
-  ## A helper function to streamingly update an SDL texture
-  ## with a frame in dav1d's output format
-  if 0.SDL_Return != updateYUVTexture(texture, nil,
-    cast[ptr byte](pic.raw.data[0]), pic.raw.stride[0].cint, # Y
-    cast[ptr byte](pic.raw.data[1]), pic.raw.stride[1].cint, # U
-    cast[ptr byte](pic.raw.data[2]), pic.raw.stride[1].cint  # V
-  ):
-    raise newException(ValueError, $getError())
-
 ### init configuration from command line params
 assert paramCount() == 1, "please specify file to play on command line"
 
@@ -185,8 +174,7 @@ while run:
     of pktAudio:
       # play back a chunk of audio data from the queue
       # a new packet will be demuxed automagically in the demuxer thread to refill the channel queue
-      let r = audioDevice.queueAudio(packet.samples.data, packet.samples.bytes.uint32)
-      if r != 0:
+      if 0 != audioDevice.queueAudio(packet.samples.data, packet.samples.bytes.uint32):
         raise newException(IOError, $getError())
 
     of pktDone:
