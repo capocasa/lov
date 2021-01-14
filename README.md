@@ -23,7 +23,7 @@ The lov command line player supports a minimal set of features commonly required
 Performance
 -----------
 
-lov uses about 30% less cpu than mplayer and consumes about 20% less memory, as expected simply because there very little code being run.
+The lov command line player uses about 30% less cpu than mplayer and consumes about 20% less memory, as expected simply because there very little code being run.
 
 Road map
 --------
@@ -71,11 +71,23 @@ $ lov resources/test.webm
 
 Once the lov player is running, it will play the duration of the file, and then end at the last frame. The player can be controlled using the following keys:
 
-| ESC / Q  | Exit the player   |
-| HOME     | Skip to beginning |
+| ESC / Q   | Exit the player          |
+| Home      | Skip to beginning        |
+| Page Up   | Skip 1 minute backward   |
+| Page Down | Skip 1 minute forward    |
+| Down      | Skip 10 seconds backward |
+| Up        | Skip 10 seconds forward  |
+| Left      | Skip 1 second backward   |
+| Right     | Skip 1 second forward    |
 
 Usage as library
 ----------------
+
+*Full documentation*
+
+The full [Lov API documentation](https://capocasa.github.io/lov/lov.html)
+
+*Example*
 
 The heart of lov is the threaded demuxer-decoder that you call with a file name and then receive decoded audio and video packets.
 
@@ -102,7 +114,7 @@ while true:
 
 ```
 
-Please see the lov command line tool in `cmd.nim` for a full SDL2 example of the decoder-demuxer. Note that programs must be compiled with --threads=on to use the lov library.
+Please see the lov command line tool in `play.nim` for a full SDL2 example of the decoder-demuxer. Note that programs must be compiled with --threads=on to use the lov library.
 
 Further, note that the lov library does not depend on sdl2- the command-line tool does.
 
