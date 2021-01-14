@@ -74,15 +74,12 @@ proc decmux*(control: ptr Channel[Control]) {.thread} =
   while true:
 
     block restart:
-      echo "restart"
       for packet in decmuxInit.demuxer:
-        echo "packet"
         let (received, control) = decmuxInit.control[].tryRecv
           ## Check if a seek was requested and handle it
         if received:
           case control.kind:
           of cSeek:
-            echo "in seek"
             doSeek()
             break restart
 
@@ -127,7 +124,6 @@ proc decmux*(control: ptr Channel[Control]) {.thread} =
           # TODO: handle packet
           discard
 
-      echo "done"
       decmuxInit.packet[].send(Packet(kind: pktDone))
       # notify demuxing has completed
 
@@ -136,7 +132,6 @@ proc decmux*(control: ptr Channel[Control]) {.thread} =
         # because there is no demuxing so nothing else to do while we wait
       case control.kind:
       of cSeek:
-        echo "out seek"
         doSeek()
         break restart
       of cInit:
