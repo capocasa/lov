@@ -165,6 +165,12 @@ proc newLov*(demuxer: Demuxer, queueSize = 5): Lov =
     control: result.control
   )))
 
+template newLov*(file: File, queueSize = 5): Lov =
+  newLov(newDemuxer(file))
+
+template newLov*(filename: string, queueSize = 5): Lov =
+  newLov(newDemuxer(filename.open))
+
 proc getPacket*(lov: Lov): Packet =
   ## Wait for a packet form the demuxer-decoder. A packet could be
   ## a decoded frame of video, a decoded chunk of audio samples, or

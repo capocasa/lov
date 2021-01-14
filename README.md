@@ -38,7 +38,7 @@ lov generally works as advertised, but is still very new, so you will possibly e
 - [x] Basic command-line usage
 - [ ] Support Standard GC 
 - [X] Support ARC and ORC
-- [ ] Good High-level library interface
+- [x] Good High-level library interface
 - [ ] Library documentation
 - [x] Pause, play, pause and seek
 - [x] Test for memory related crashes
@@ -77,16 +77,16 @@ Once the lov player is running, it will play the duration of the file, and then 
 Usage as library
 ----------------
 
-The heart of lov is the threaded demuxer-decoder that you call with a file name and then receive audio and video packets from an exposed Nim Channel.
+The heart of lov is the threaded demuxer-decoder that you call with a file name and then receive decoded audio and video packets.
 
 ```
+
 var l = newLov("myfile.webm")
 
-var run = true
-while run:
+while true:
 
   # wait for a packet containing a demuxed packet
-  let packet = l.packet[].recv()
+  let packet = l.getPacket()
 
   case packet.kind:
 
@@ -97,13 +97,19 @@ while run:
     handleAudioSamples(packet.samples)
 
   of pktDone:
-    run = false
+    l.demuxer.file.close()
+    break
 
 ```
 
 Please see the lov command line tool in `cmd.nim` for a full SDL2 example of the decoder-demuxer. Note that programs must be compiled with --threads=on to use the lov library.
 
 Further, note that the lov library does not depend on sdl2- the command-line tool does.
+
+Limitations
+-----------
+
+The file format is purposely limited to the "latest open video", currently webm/av1/opus, see below.
 
 File Format
 -----------
