@@ -2,26 +2,33 @@
 lov
 ===
 
-lov stands for the "latest open video" and is a minimalistic SDL video player library.
+lov stands for the "latest open video" and is a minimalistic SDL video player library that comes with a minimal command line player.
 
 Why lov?
 --------
 
-Lov is primarily intended to be used as a video playback library within applications where the video authoring process can be controlled by the application author. Therefore, it only supports one video format: The best-performing one available without licensing restricitons, leveraging the fastest, smallest and most portable libraries available. At the time of writing, this is a webm container with av1 video and opus audio, wrangled by nestegg, libopus and dav1d, respectively.
+Use lov when you only need one video format, but need the highest quality video, using the least CPU and memory, in a highly portable way, using open media formats, with a liberal license.
 
-Lov provides a nim-flavored interface while making few extremely minor speed compromises.
+In practice, this usually means commercial or open-source applications targeting mobile, embedded, or any kind of older device.
+
+Lov provides a nim-flavored development interface that abstracts away multi-threading and memory managmenet while making extremely minor speed compromises.
+
+Features
+--------
+
+The lov library comes with a decoder-demuxer iterator that takes a valid file and outputs the decoded packets that can then be rendered by video and audio. That's all.
+
+The lov command line player supports a minimal set of features commonly required by a video player and serves as a usage example.
 
 Performance
 -----------
 
-No formal benchmarks were done yet, however repeated manual measuring seems to indicate that lov performs 30%-50% better than mplayer, mpv or vlc on the same source file. I have no idea why- the same decoders are used by all players.
+lov uses about 30% less cpu than mplayer and consumes about 20% less memory, as expected simply because there very little code being run.
 
 Road map
 --------
 
-lov is feature complete and supports a minimal set of features commonly required by a video player. It uses about 30% less cpu than mplayer but consume about 30% more memory, and seems to leak it.
-
-It does work well enough that I would consider it suitable as a starting point for integrating the wrapped libraries into your own application- copy-paste the demuxer-decoder and presenter threads and integrate them with your needs.
+lov generally works as advertised, but is still very new, so you will possibly encounter bugs in the edge cases.
 
 - [x] webm demuxing
 - [x] av1 video decoding
@@ -29,11 +36,13 @@ It does work well enough that I would consider it suitable as a starting point f
 - [x] thread safety
 - [x] Automatic memory management
 - [x] Basic command-line usage
+- [ ] Support Standard GC 
+- [X] Support ARC and ORC
 - [ ] Good High-level library interface
 - [ ] Library documentation
 - [x] Pause, play, pause and seek
 - [x] Test for memory related crashes
-- [ ] Fix memory leak
+- [x] Fix memory leak
 - [x] Resizing and fullscreen
 - [x] Testing on linux
 - [ ] Testing on OSX
@@ -48,7 +57,6 @@ It does work well enough that I would consider it suitable as a starting point f
 - [ ] Get rid of 1ms video frame jitter
 - [ ] Do nice performance tests
 - [ ] Get rid of sdl2 dependency for library-only build *
-- [x] Test with ARC and ORC
 
 * seems to depend on [nimble optional-dependencies](https://github.com/nim-lang/nimble/issues/506) feature
 

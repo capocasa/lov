@@ -29,6 +29,12 @@ of "--help":
   echo "SPACE      Start/Stop playback"
   echo "ESC/Q      Exit"
   echo "HOME       Skip to beginning"
+  echo "PAGE UP    Skip back 1 minute"
+  echo "PAGE DOWN  Skip forward 1 minute"
+  echo "UP         Skip forward 10 seconds"
+  echo "DOWN       Skip forward 10 seconds"
+  echo "LEFT       Skip back 1 seconds"
+  echo "RIGHT      Skip forward 1 second"
   quit 127
 else:
   filename = paramStr(1)
@@ -160,7 +166,6 @@ while run:
 
   while play and not done:
     # if playing, keep getting packets until next video frame
-
     let packet = l.getPacket()
       # wait for a packet containing a demuxed packet
 

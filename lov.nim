@@ -44,6 +44,19 @@ type
       timestamp: uint64
   DecmuxInit* = tuple[demuxer: Demuxer, av1Decoder: dav1d.Decoder, opusDecoder: opus.Decoder, packet: ptr Channel[Packet], control: ptr Channel[Control]]
 
+template doSeek() =
+  ## Utility template for decmux, handles a seek message
+  decmuxInit.demuxer.seek(control.timestamp)
+  while decmuxInit.packet[].tryRecv.dataAvailable:
+    # flush channel buffer
+    discard
+  while true:
+    try:
+      discard decmuxInit.av1Decoder.getPicture()
+    except BufferError:
+      break
+  decmuxInit.av1Decoder.flush()
+
 proc decmux*(control: ptr Channel[Control]) {.thread} =
   ## The demuxer-decoder thread- opens up a file, demuxes it into its packets,
   ## decodes those appropriately, and sends the packet data to the
@@ -60,75 +73,74 @@ proc decmux*(control: ptr Channel[Control]) {.thread} =
 
   while true:
 
-    for packet in decmuxInit.demuxer:
+    block restart:
+      echo "restart"
+      for packet in decmuxInit.demuxer:
+        echo "packet"
+        let (received, control) = decmuxInit.control[].tryRecv
+          ## Check if a seek was requested and handle it
+        if received:
+          case control.kind:
+          of cSeek:
+            echo "in seek"
+            doSeek()
+            break restart
 
-      case packet.track.kind:
-      of tkAudio:
-        case packet.track.audioCodec:
-        of acOpus:
-          for chunk in packet:
-            var decoded = Packet(kind: pktAudio)
-            decoded.samples = decmuxInit.opusDecoder.decode(chunk.data, chunk.len)
-            decoded.timestamp = packet.timestamp
-            decmuxInit.packet[].send(decoded)
-        else:
-          raise newException(ValueError, "codec not supported: " & $packet.track.audioCodec)
-      of tkVideo:
-        case packet.track.videoCodec:
-        of vcAv1:
-          for chunk in packet:
-            try:
-              decmuxInit.av1Decoder.send(chunk.data, chunk.len)
-            except BufferError:
-              # TODO: handle
-              raise getCurrentException()
+          of cInit:
+            raise newException(Defect, "already initialized")
 
-            # video decode and delay for timing source
-            var decoded = Packet(kind: pktVideo)
-            try:
-              decoded.picture = decmuxInit.av1Decoder.getPicture()
+        case packet.track.kind:
+        of tkAudio:
+          case packet.track.audioCodec:
+          of acOpus:
+            for chunk in packet:
+              var decoded = Packet(kind: pktAudio)
+              decoded.samples = decmuxInit.opusDecoder.decode(chunk.data, chunk.len)
               decoded.timestamp = packet.timestamp
               decmuxInit.packet[].send(decoded)
-            except BufferError:
-              # TODO: handle
-              raise getCurrentException()
+          else:
+            raise newException(ValueError, "codec not supported: " & $packet.track.audioCodec)
+        of tkVideo:
+          case packet.track.videoCodec:
+          of vcAv1:
+            for chunk in packet:
+              try:
+                decmuxInit.av1Decoder.send(chunk.data, chunk.len)
+              except BufferError:
+                # TODO: handle
+                raise getCurrentException()
 
-        else:
-          # TODO: handle unknown packet codec
-          discard
-      else:
-        # TODO: handle packet
-        discard
+              # video decode and delay for timing source
+              var decoded = Packet(kind: pktVideo)
+              try:
+                decoded.picture = decmuxInit.av1Decoder.getPicture()
+                decoded.timestamp = packet.timestamp
+                decmuxInit.packet[].send(decoded)
+              except BufferError:
+                # TODO: handle
+                raise getCurrentException()
 
-      let (received, control) = decmuxInit.control[].tryRecv
-        ## Check if a seek was requested and handle it
-      if received:
-        case control.kind:
-        of cSeek:
-          while decmuxInit.packet[].tryRecv.dataAvailable:
-            # flush channel buffer
+          else:
+            # TODO: handle unknown packet codec
             discard
-          decmuxInit.demuxer.seek(control.timestamp)
-          decmuxInit.av1Decoder.flush()
+        else:
+          # TODO: handle packet
+          discard
 
-        of cInit:
-          raise newException(Defect, "already initialized")
-
-    decmuxInit.packet[].send(Packet(kind: pktDone))
+      echo "done"
+      decmuxInit.packet[].send(Packet(kind: pktDone))
       # notify demuxing has completed
 
-    let control = decmuxInit.control[].recv()
-      # Wait for a seek, rather than merely checking for a seek with tryRecv,
-      # because there is no demuxing so nothing else to do while we wait
-    case control.kind:
-    of cSeek:
-      while decmuxInit.packet[].tryRecv.dataAvailable:
-        # flush channel buffer
-        discard
-      decmuxInit.demuxer.seek(control.timestamp)
-      decmuxInit.av1Decoder.flush()
-    of cInit:
-      raise newException(Defect, "already initialized")
+      let control = decmuxInit.control[].recv()
+        # Wait for a seek, rather than merely checking for a seek with tryRecv,
+        # because there is no demuxing so nothing else to do while we wait
+      case control.kind:
+      of cSeek:
+        echo "out seek"
+        doSeek()
+        break restart
+      of cInit:
+        raise newException(Defect, "already initialized")
 
 
 proc cleanup*(lov: Lov) =
