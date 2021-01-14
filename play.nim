@@ -95,6 +95,8 @@ fpsman.init
 fpsman.setFramerate(fps)
 
 while run:
+  var saught = false
+    # prevent keyboard mashing
   while pollEvent(evt):
     const
       smallSkip = 1_000_000
@@ -118,25 +120,39 @@ while run:
         run = false
         break
       of K_HOME:
-        l.seek(0)
-        done = false
+        if not saught:
+          saught = true
+          done = false
+          l.seek(0)
       of K_LEFT:
-        l.seek(if timestamp < smallskip: 0.uint64 else: timestamp - smallSkip)
-        done = false
+        if not saught:
+          saught = true
+          done = false
+          l.seek(if timestamp < smallskip: 0.uint64 else: timestamp - smallSkip)
       of K_RIGHT:
-        l.seek(timestamp + smallSkip)
+        if not saught:
+          saught = true
+          l.seek(timestamp + smallSkip)
       of K_DOWN:
-        l.seek(if timestamp < mediumskip: 0.uint64 else: timestamp - mediumSkip)
-        done = false
+        if not saught:
+          saught = true
+          done = false
+          l.seek(if timestamp < mediumskip: 0.uint64 else: timestamp - mediumSkip)
       of K_UP:
-        l.seek(timestamp + mediumSkip)
-        done = false
+        if not saught:
+          saught = true
+          done = false
+          l.seek(timestamp + mediumSkip)
       of K_PAGEDOWN:
-        l.seek(if timestamp < largeskip: 0.uint64 else: timestamp - largeSkip)
-        done = false
+        if not saught:
+          saught = true
+          done = false
+          l.seek(if timestamp < largeskip: 0.uint64 else: timestamp - largeSkip)
       of K_PAGEUP:
-        l.seek(timestamp + largeSkip)
-        done = false
+        if not saught:
+          saught = true
+          done = false
+          l.seek(timestamp + largeSkip)
       else:
         discard
     else:
