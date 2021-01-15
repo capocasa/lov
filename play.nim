@@ -5,7 +5,7 @@ import lov, nestegg, dav1d, opus
 ### init configuration from command line params
 assert paramCount() == 1, "please specify file to play on command line"
 
-var filename:string
+var l:Lov
 
 case paramStr(1):
 of "--help":
@@ -26,25 +26,32 @@ of "--help":
   echo "RIGHT      Skip forward 1 second"
   quit 127
 else:
-  filename = paramStr(1)
-
-var file = filename.open
-var demuxer = newDemuxer(file)
-let l = newLov(demuxer)
+  l = newLov(paramStr(1))
 
 ### init SDL
 if 0.SDL_return < sdl2.init(INIT_EVERYTHING):
   raise newException(IOError, $getError())
 
 var
-  fps = demuxer.firstVideo.fps
+  fps = l.demuxer.firstVideo.fps
+  width = l.demuxer.firstVideo.videoParams.width
+  height = l.demuxer.firstVideo.videoParams.height
+  rate = l.demuxer.firstAudio.audioParams.rate
+  channels = l.demuxer.firstAudio.audioParams.channels
+#[
+  fps = 25.0
+  width = 720
+  height = 480
+  rate = 48000
+  channels = 2
+]#
 
 var window = createWindow(
   "lov",
   SDL_WINDOWPOS_UNDEFINED_MASK,
   SDL_WINDOWPOS_UNDEFINED_MASK,
-  demuxer.firstVideo.videoParams.width.cint,
-  demuxer.firstVideo.videoParams.height.cint,
+  width.cint,
+  height.cint,
   SDL_WINDOW_SHOWN or SDL_WINDOW_RESIZABLE or SDL_WINDOW_INPUT_FOCUS
 )
 
@@ -58,17 +65,17 @@ if renderer == nil:
 
 renderer.setDrawColor(0, 0, 0)
 
-discard renderer.setLogicalSize(demuxer.firstVideo.videoParams.width.cint, demuxer.firstVideo.videoParams.height.cint)
+discard renderer.setLogicalSize(width.cint, height.cint)
   # keep aspect ratio and handle window resizes
 
-let texture = createTexture(renderer, SDL_PIXELFORMAT_IYUV, SDL_TEXTUREACCESS_STREAMING, demuxer.firstVideo.videoParams.width.cint, demuxer.firstVideo.videoParams.height.cint)
+let texture = createTexture(renderer, SDL_PIXELFORMAT_IYUV, SDL_TEXTUREACCESS_STREAMING, width.cint, height.cint)
   # create texture, the video will render to this 
 
 if 0 != renderer.clear():
   raise newException(IOError, $getError())
 
 # initialize SDL audio
-let audioBufferSize = uint16((1.0 / fps) * demuxer.firstAudio.audioParams.rate.float * demuxer.firstAudio.audioParams.channels.float)
+let audioBufferSize = uint16((1.0 / fps) * rate.float * channels.float)
 let requested = AudioSpec(freq: 48000.cint, channels: 2.uint8, samples: audioBufferSize, format: AUDIO_S16LSB)
 var obtained = AudioSpec()
 let audioDevice = openAudioDevice(nil, 0, requested.unsafeAddr, obtained.unsafeAddr, 0)
@@ -105,12 +112,6 @@ while run:
       case evt.key.keysym.sym:
       of K_SPACE:
         play = not play
-        #[
-        if play:
-          play = false
-        else:
-          play = true
-        ]#
       of K_ESCAPE, K_Q:
         run = false
         break
@@ -176,6 +177,7 @@ while run:
       # a new packet will be demuxed automagically in the demuxer thread to refill the channel queue
       if 0 != audioDevice.queueAudio(packet.samples.data, packet.samples.bytes.uint32):
         raise newException(IOError, $getError())
+      discard
 
     of pktDone:
       done = true
@@ -191,5 +193,3 @@ destroy(renderer)
 destroy(texture)
 audioDevice.closeAudioDevice
 sdl2.quit()
-file.close
-
