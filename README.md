@@ -23,7 +23,7 @@ The lov command line player supports a minimal set of features commonly required
 Performance
 -----------
 
-The lov command line player uses about 30% less cpu than mplayer and consumes about 20% less memory, as expected simply because there very little code being run.
+The lov command line player uses about 30% less cpu than mplayer and consumes about 20% less memory, as expected simply because there very little code being run. No copies of encoded or decoded audio/video data are made.
 
 Road map
 --------
@@ -109,7 +109,6 @@ while true:
     handleAudioSamples(packet.samples)
 
   of pktDone:
-    l.demuxer.file.close()
     break
 
 ```
@@ -122,6 +121,12 @@ Limitations
 -----------
 
 The file format is purposely limited to the "latest open video", currently webm/av1/opus, see below.
+
+Only arc/orc GC is supported at the moment. The standard GC causes crashs I was as of yet unable to track down.
+
+The player can be affected by SDL audio system related memory leaks on some systems.
+
+The dav1d decoder has a memory pool that grows. This seems to be normal behavior managed by dav1d.
 
 File Format
 -----------
