@@ -36,7 +36,7 @@ lov generally works as advertised, but is still very new, so you will possibly e
 - [x] thread safety
 - [x] Automatic memory management
 - [x] Basic command-line usage
-- [ ] Support Standard GC 
+- [X] Support Standard GC 
 - [X] Support ARC and ORC
 - [x] Good High-level library interface
 - [ ] Library documentation
@@ -122,11 +122,9 @@ Limitations
 
 The file format is purposely limited to the "latest open video", currently webm/av1/opus, see below.
 
-Only arc/orc GC is supported at the moment. The standard GC causes crashs I was as of yet unable to track down.
-
 The player can be affected by SDL audio system related memory leaks on some systems.
 
-The dav1d decoder has a memory pool that grows. This seems to be normal behavior managed by dav1d.
+The dav1d decoder has a memory pool that grows and is occasionally collected. This seems to be normal behavior managed by dav1d.
 
 File Format
 -----------

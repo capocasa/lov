@@ -1,6 +1,6 @@
 import os
 import sdl2, sdl2/[audio, gfx], lov/sdl2_aux
-import lov, nestegg, dav1d, opus
+import lov, nestegg, opus
 
 ### init configuration from command line params
 assert paramCount() == 1, "please specify file to play on command line"
@@ -166,6 +166,7 @@ while run:
       # a new packet will be demuxed automagically to the channel queue
       try:
         texture.update(packet.picture)
+        GC_unref(packet.picture)
       except ValueError:
         # TODO: warn or handle
         discard

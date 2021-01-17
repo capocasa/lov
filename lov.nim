@@ -70,9 +70,8 @@ proc decmux*(control: ptr Channel[Control]) {.thread} =
     decmuxInit = c.decmuxInit
   else:
     raise newException(AssertionDefect, "Must init demuxer thread before sending other messages")
-
+  
   while true:
-
     block restart:
       for packet in decmuxInit.demuxer:
         let (received, control) = decmuxInit.control[].tryRecv
@@ -111,6 +110,7 @@ proc decmux*(control: ptr Channel[Control]) {.thread} =
               var decoded = Packet(kind: pktVideo)
               try:
                 decoded.picture = decmuxInit.av1Decoder.getPicture()
+                GC_ref(decoded.picture)
                 decoded.timestamp = packet.timestamp
                 decmuxInit.packet[].send(decoded)
               except BufferError:
