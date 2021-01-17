@@ -143,8 +143,6 @@ The following criteria guided the choice of libraries:
 (2) as freely usable as possible
 (3) high performance and high quality
 
-For this reason, 2 of 3 wrappers
-
 Authoring
 ---------
 
