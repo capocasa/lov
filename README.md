@@ -39,7 +39,7 @@ lov generally works as advertised, but is still very new, so you will possibly e
 - [ ] Support Standard GC - will not support standard GC because of threading/shared heap requirement
 - [x] Support ARC and ORC
 - [x] Good High-level library interface
-- [ ] Library documentation
+- [x] Library documentation
 - [x] Pause, play, pause and seek
 - [x] Test for memory related crashes
 - [x] Fix memory leak
