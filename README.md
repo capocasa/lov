@@ -36,8 +36,8 @@ lov generally works as advertised, but is still very new, so you will possibly e
 - [x] thread safety
 - [x] Automatic memory management
 - [x] Basic command-line usage
-- [X] Support Standard GC 
-- [X] Support ARC and ORC
+- [o] Support Standard GC - will not support standard GC because of threading/shared heap requirement
+- [x] Support ARC and ORC
 - [x] Good High-level library interface
 - [ ] Library documentation
 - [x] Pause, play, pause and seek
@@ -51,7 +51,7 @@ lov generally works as advertised, but is still very new, so you will possibly e
 - [ ] Testing on Android
 - [ ] Testing on wasm
 - [ ] Testing on asm.js
-- [ ] Compatibility with Nim 1.0
+- [o] Compatibility with Nim 1.0 - will not support, need ORC
 - [ ] Continuous integration on linux
 - [ ] Evaluate possible long-term audio-video drift
 - [ ] Get rid of 1ms video frame jitter
@@ -119,6 +119,8 @@ Further, note that the lov library does not depend on sdl2- the command-line too
 
 Limitations
 -----------
+
+Only shared-heap garbage collectors are supported- currently orc and arc
 
 The file format is purposely limited to the "latest open video", currently webm/av1/opus, see below.
 
