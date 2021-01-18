@@ -36,7 +36,7 @@ lov generally works as advertised, but is still very new, so you will possibly e
 - [x] thread safety
 - [x] Automatic memory management
 - [x] Basic command-line usage
-- [ ] Support Standard GC - will not support standard GC because of threading/shared heap requirement
+- [ ] ~~Support Standard GC~~ will not support standard GC because of threading/shared heap requirement
 - [x] Support ARC and ORC
 - [x] Good High-level library interface
 - [x] Library documentation
@@ -51,7 +51,7 @@ lov generally works as advertised, but is still very new, so you will possibly e
 - [ ] Testing on Android
 - [ ] Testing on wasm
 - [ ] Testing on asm.js
-- [ ] Compatibility with Nim 1.0 - will not support, need ORC
+- [ ] ~~Compatibility with Nim 1.0 ~~ will not support Nim 1.0, need ORC
 - [ ] Continuous integration on linux
 - [ ] Evaluate possible long-term audio-video drift
 - [ ] Get rid of 1ms video frame jitter
