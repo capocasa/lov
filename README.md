@@ -56,6 +56,7 @@ lov generally works as advertised, but is still very new, so you will possibly e
 - [ ] Evaluate possible long-term audio-video drift
 - [ ] Get rid of 1ms video frame jitter
 - [ ] Do nice performance tests
+- [ ] permit use of dav1d frame/tile threads for even better performance (needs decoder loop revamp)
 - [ ] Get rid of sdl2 dependency for library-only build *
 
 * seems to depend on [nimble optional-dependencies](https://github.com/nim-lang/nimble/issues/506) feature
