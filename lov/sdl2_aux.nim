@@ -20,6 +20,10 @@ when not defined(SDL_Static):
 # --- end of additional sdl2 wrapper code ---
 
 proc update*(texture: TexturePtr, pic: dav1d.Picture) =
+
+  assert PIXEL_LAYOUT_I420 == pic.raw.p.layout, "i420 required"
+  assert pic.raw.p.bpc == 8, "8 bits required"
+
   ## A update an SDL texture with a frame in the dav1d's av1 decoder's output format
   if 0.SDL_Return != updateYUVTexture(texture, nil,
     cast[ptr byte](pic.raw.data[0]), pic.raw.stride[0].cint, # Y
