@@ -81,13 +81,13 @@ var obtained = AudioSpec()
 let audioDevice = openAudioDevice(nil, 0, requested.unsafeAddr, obtained.unsafeAddr, 0)
 if audioDevice == 0:
   raise newException(IOError, $getError())
-audioDevice.pauseAudioDevice(0)
 
 ### present video frames and audio samples
 
 var
   run = true
   play = true
+  first = true
   done = false
   evt = sdl2.defaultEvent
   fpsman: FpsManager
@@ -95,6 +95,7 @@ var
 
 fpsman.init
 fpsman.setFramerate(fps)
+audioDevice.pauseAudioDevice(0)
 
 while run:
   var saught = false
@@ -112,6 +113,7 @@ while run:
       case evt.key.keysym.sym:
       of K_SPACE:
         play = not play
+        audioDevice.pauseAudioDevice(play.cint)
       of K_ESCAPE, K_Q:
         run = false
         break
@@ -133,22 +135,22 @@ while run:
         if not saught:
           saught = true
           done = false
-          l.seek(if timestamp < mediumskip: 0.uint64 else: timestamp - mediumSkip)
+          l.seek(timestamp + mediumSkip)
       of K_UP:
         if not saught:
           saught = true
           done = false
-          l.seek(timestamp + mediumSkip)
+          l.seek(if timestamp < mediumskip: 0.uint64 else: timestamp - mediumSkip)
       of K_PAGEDOWN:
         if not saught:
           saught = true
           done = false
-          l.seek(if timestamp < largeskip: 0.uint64 else: timestamp - largeSkip)
+          l.seek(timestamp + largeSkip)
       of K_PAGEUP:
         if not saught:
           saught = true
           done = false
-          l.seek(timestamp + largeSkip)
+          l.seek(if timestamp < largeskip: 0.uint64 else: timestamp - largeSkip)
       else:
         discard
     else:
@@ -166,11 +168,11 @@ while run:
       # a new packet will be demuxed automagically to the channel queue
       try:
         texture.update(packet.picture)
-        GC_unref(packet.picture)
       except ValueError:
         # TODO: warn or handle
         discard
       timestamp = packet.timestamp
+      # echo "timestamp decoded ", $timestamp
       break
 
     of pktAudio:
