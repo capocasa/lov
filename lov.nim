@@ -46,16 +46,18 @@ type
 
 template doSeek() =
   ## Utility template for decmux, handles a seek message
-  decmuxInit.demuxer.seek(control.timestamp)
   while decmuxInit.packet[].tryRecv.dataAvailable:
     # flush channel buffer
     discard
   while true:
+    # empty video decoder
     try:
       discard decmuxInit.av1Decoder.getPicture()
     except BufferError:
       break
   decmuxInit.av1Decoder.flush()
+    # reset video decoder state
+  decmuxInit.demuxer.seek(control.timestamp)
 
 proc decmux*(control: ptr Channel[Control]) {.thread} =
   ## The demuxer-decoder thread- opens up a file, demuxes it into its packets,
@@ -103,7 +105,7 @@ proc decmux*(control: ptr Channel[Control]) {.thread} =
               try:
                 decmuxInit.av1Decoder.send(chunk.data, chunk.len)
               except BufferError:
-                # TODO: handle
+                # TODO: permit frame/tile threads
                 raise getCurrentException()
 
               # video decode and delay for timing source
@@ -114,7 +116,7 @@ proc decmux*(control: ptr Channel[Control]) {.thread} =
                 decoded.timestamp = packet.timestamp
                 decmuxInit.packet[].send(decoded)
               except BufferError:
-                # TODO: handle
+                # TODO: permit frame/tile threads 
                 raise getCurrentException()
 
           else:
