@@ -28,8 +28,11 @@ The lov command line player uses about 30% less cpu than mplayer and consumes ab
 Road map
 --------
 
-lov generally works as advertised, but is still very new, so you will possibly encounter bugs in the edge cases.
+lov works at its most basic task, but is not just yet usable as a player. Performance is really good though, so when the bugs are fixed this will be nice.
 
+- [ ] Fix A/V sync
+- [ ] Fix skipping
+- [ ] Fix all memory leaks
 - [x] webm demuxing
 - [x] av1 video decoding
 - [x] opus audio decoding
@@ -46,7 +49,7 @@ lov generally works as advertised, but is still very new, so you will possibly e
 - [x] Resizing and fullscreen
 - [x] Testing on linux
 - [ ] Testing on OSX
-- [ ] Testing on Windows
+- [x] Testing on Windows
 - [ ] Testing on iOs
 - [ ] Testing on Android
 - [ ] Testing on wasm
@@ -60,6 +63,58 @@ lov generally works as advertised, but is still very new, so you will possibly e
 - [ ] Get rid of sdl2 dependency for library-only build *
 
 * seems to depend on [nimble optional-dependencies](https://github.com/nim-lang/nimble/issues/506) feature
+
+Installation
+------------
+
+lov can be installed using the nimble build system:
+
+    nimble install https://github.com/capocasa/lov
+
+Prerequisites
+-------------
+
+lov has a number of prerequisites, mostly build systems for its libraries.
+
+- meson
+- autoconf
+- make
+- libtool
+- bash
+
+On linux and OSX, these can be fulfilled using the default package manager.
+
+On Windows, the number of prerequisites is too great to reasonably install them all manually. Instead, it is advised to
+install the dependencies using msys2, a system to easily install unix software on Windows.
+
+I personally install all my tools using msys2, including nim, nimble and mingw-w64, but the latter are optional.
+
+(1) Download MSYS2 [from the msys2.org homepage](https://www.msys2.org/) and install it
+
+(2) Open up the msys2 command line and install the required packages:
+
+    pacman -Syu  # update repositories
+
+    pacman -S nim nimble mingw-w64 meson autoconf libtool make nasm
+
+(3) Make the tools accessible in your regular windows command line so they can be picked up by nimterop, the wrapper generator used by lov's dependencies. Add the following paths to your environment variables:
+
+    C:\msys264\usr\bin
+      # build tools such as autoreconf and auxiliary commands like bash and perl
+
+    C:\msys264\mingw64\bin
+      # compilers, linkers and assemblers
+
+    C:\Users\MyUsername\.nimble\bin
+      # installed nimble packages
+
+(4) Make script files accessible in regular windows command line (run this in msys2 bash)
+
+    echo 'perl "%~dp0autoreconf" %*' > /usr/bin/autoreconf
+    echo 'perl "%~dp0aclocal" %*' > /usr/bin/aclocal
+      #!/usr/bin/perl shim for cmd
+
+Cross compilation is currently not supported- according to nimterop, this is precluded by some limitations in nim, although I'd love to be proven wrong.
 
 Usage as command-line tool
 --------------------------
@@ -120,6 +175,8 @@ Further, note that the lov library does not depend on sdl2- the command-line too
 
 Limitations
 -----------
+
+Many open bugs.
 
 Only shared-heap garbage collectors are supported- currently orc and arc
 
