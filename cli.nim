@@ -1,4 +1,4 @@
-import os
+import os, deques
 import sdl2, sdl2/[audio, gfx], lov/sdl2_aux
 import lov, nestegg, opus
 
@@ -76,7 +76,7 @@ if 0 != renderer.clear():
 
 # initialize SDL audio
 let audioBufferSize = uint16((1.0 / fps) * rate.float * channels.float)
-let requested = AudioSpec(freq: 48000.cint, channels: 2.uint8, samples: audioBufferSize, format: AUDIO_S16LSB)
+let requested = AudioSpec(freq: 48000.cint, channels: 2.uint8, samples: 1024 * 64.uint16, format: AUDIO_S16LSB)
 var obtained = AudioSpec()
 let audioDevice = openAudioDevice(nil, 0, requested.unsafeAddr, obtained.unsafeAddr, 0)
 if audioDevice == 0:
@@ -85,6 +85,7 @@ if audioDevice == 0:
 ### present video frames and audio samples
 
 var
+  init = true
   run = true
   play = true
   first = true
@@ -92,10 +93,12 @@ var
   evt = sdl2.defaultEvent
   fpsman: FpsManager
   timestamp: culonglong
+  pictures: Deque[lov.Packet]
 
 fpsman.init
 fpsman.setFramerate(fps)
 audioDevice.pauseAudioDevice(0)
+pictures = initDeque[lov.Packet]()
 
 while run:
   var saught = false
@@ -156,39 +159,46 @@ while run:
     else:
       discard
 
-  while play and not done:
-    # if playing, keep getting packets until next video frame
-    let packet = l.getPacket()
-      # wait for a packet containing a demuxed packet
+  if not done:
+    while play:
+      # if playing, keep getting packets until next video frame
+      let packet = l.getPacket()
+        # wait for a packet containing a demuxed packet
 
-    case packet.kind:
+      case packet.kind:
 
-    of pktVideo:
-      # show a video frame from the queue
-      # a new packet will be demuxed automagically to the channel queue
-      try:
-        texture.update(packet.picture)
-      except ValueError:
-        # TODO: warn or handle
+      of pktVideo:
+        # show a video frame from the queue
+        # a new packet will be demuxed automagically to the channel queue
+        pictures.addFirst(packet)
+        break
+
+      of pktAudio:
+        # play back a chunk of audio data from the queue
+        # a new packet will be demuxed automagically in the demuxer thread to refill the channel queue
+        if 0 != audioDevice.queueAudio(packet.samples.data, packet.samples.bytes.uint32):
+          raise newException(IOError, $getError())
         discard
-      timestamp = packet.timestamp
-      # echo "timestamp decoded ", $timestamp
-      break
 
-    of pktAudio:
-      # play back a chunk of audio data from the queue
-      # a new packet will be demuxed automagically in the demuxer thread to refill the channel queue
-      if 0 != audioDevice.queueAudio(packet.samples.data, packet.samples.bytes.uint32):
-        raise newException(IOError, $getError())
+      of pktDone:
+        done = true
+        break
+
+    let packet = pictures.popLast()
+
+    try:
+      texture.update(packet.picture)
+    except ValueError:
+      # TODO: warn or handle
       discard
-
-    of pktDone:
-      done = true
 
   if 0 != renderer.clear():
     raise newException(IOError, $getError())
   if 0.SDL_Return != renderer.copy(texture, nil, nil):
     raise newException(IOError, $getError())
+  #if init:
+  #  (70 + (obtained.samples.float * 1000.0 / obtained.freq.float)).uint32.delay
+  #else:
   fpsman.delay
   renderer.present()
 

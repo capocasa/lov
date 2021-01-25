@@ -1,5 +1,5 @@
 import math, dav1d
-import sdl2, sdl2/[gfx]
+import sdl2, sdl2/[gfx, audio]
 
 ## Nim sdl2 helper functions for Nim's official wrapper.
 
@@ -14,8 +14,14 @@ proc updateYUVTexture*(texture: TexturePtr, rect: ptr Rect, yPlane: ptr uint8,
                        {.importc: "SDL_UpdateYUVTexture", discardable.}
   ## Wrap hardware-accelerated YUV texture update, lacking in standard Nim sdl2
 
+proc clearQueuedAudio*(dev: AudioDeviceID)
+                       {.importc: "SDL_ClearQueuedAudio"}
+  ## clear audio queue
+
 when not defined(SDL_Static):
   {.pop}
+
+
 
 # --- end of additional sdl2 wrapper code ---
 
