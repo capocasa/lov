@@ -1,36 +1,18 @@
 import dav1d, nestegg, opus
 
 type
-  PacketKind* = enum
-    pktAudio
-    pktVideo
-    pktDone
-  Packet* = object
-    ## Packet and other data objects that can be sent to the presenter
-    ## thread by the demuxer-decoder
-    ## Can contain a packet video frame, some packet audio
-    ## samples, init data, or nothing if it's time to quit
-    case kind*: PacketKind
-    of pktVideo:
-      picture*: Picture
-        ## Packet data is a dav1d format YUV picture
-    of pktAudio:
-      samples*: Samples
-        ## Packet data is PCM audio samples
-    of pktDone:
-      discard
-    timestamp*: uint64
   LovObj* = object
     demuxer*: Demuxer
     opusDecoder*: opus.Decoder
     av1Decoder*: dav1d.Decoder
-    control: ptr Channel[Control]
+    picture*: ptr Channel[(Picture, culonglong)]
+    samples*: ptr Channel[(Samples, culonglong)]
+    control*: ptr Channel[Control]
       # this must be a pointer to pass it to
       # the demuxer channel- the rest of this object
       # is passed via that channel so can be
       # garbage collected
       # consider this a hack
-    packet: ptr Channel[Packet]
     decmux: Thread[ptr Channel[Control]]
   Lov* = ref LovObj
   ControlKind = enum
@@ -42,12 +24,26 @@ type
       decmuxInit: DecmuxInit
     of cSeek:
       timestamp: uint64
-  DecmuxInit* = tuple[demuxer: Demuxer, av1Decoder: dav1d.Decoder, opusDecoder: opus.Decoder, packet: ptr Channel[Packet], control: ptr Channel[Control]]
+  DecmuxInit* = tuple[
+    demuxer: Demuxer,
+    av1Decoder: dav1d.Decoder,
+    opusDecoder: opus.Decoder,
+    picture: ptr Channel[(Picture, culonglong)],
+    samples: ptr Channel[(Samples, culonglong)],
+    control: ptr Channel[Control]
+  ]
+
+export Picture, Samples
+
+const
+  defaultQueueSize = 30
 
 template doSeek() =
   ## Utility template for decmux, handles a seek message
-  while decmuxInit.packet[].tryRecv.dataAvailable:
-    # flush channel buffer
+  # flush channel buffer
+  while decmuxInit.picture[].tryRecv.dataAvailable:
+    discard
+  while decmuxInit.samples[].tryRecv.dataAvailable:
     discard
   while true:
     # empty video decoder
@@ -92,10 +88,8 @@ proc decmux*(control: ptr Channel[Control]) {.thread} =
           case packet.track.audioCodec:
           of acOpus:
             for chunk in packet:
-              var decoded = Packet(kind: pktAudio)
-              decoded.samples = decmuxInit.opusDecoder.decode(chunk.data, chunk.len)
-              decoded.timestamp = packet.timestamp
-              decmuxInit.packet[].send(decoded)
+              let samples = decmuxInit.opusDecoder.decode(chunk.data, chunk.len)
+              decmuxInit.samples[].send((samples, packet.timestamp))
           else:
             raise newException(ValueError, "codec not supported: " & $packet.track.audioCodec)
         of tkVideo:
@@ -109,12 +103,10 @@ proc decmux*(control: ptr Channel[Control]) {.thread} =
                 raise getCurrentException()
 
               # video decode and delay for timing source
-              var decoded = Packet(kind: pktVideo)
               try:
-                decoded.picture = decmuxInit.av1Decoder.getPicture()
-                GC_ref(decoded.picture)
-                decoded.timestamp = packet.timestamp
-                decmuxInit.packet[].send(decoded)
+                var picture = decmuxInit.av1Decoder.getPicture()
+                GC_ref(picture)
+                decmuxInit.picture[].send((picture, packet.timestamp))
               except BufferError:
                 # TODO: permit frame/tile threads 
                 raise getCurrentException()
@@ -126,11 +118,10 @@ proc decmux*(control: ptr Channel[Control]) {.thread} =
           # TODO: handle packet
           discard
 
-      decmuxInit.packet[].send(Packet(kind: pktDone))
-      # notify demuxing has completed
+      # we now decoded everything in the file
 
       let control = decmuxInit.control[].recv()
-        # Wait for a seek, rather than merely checking for a seek with tryRecv,
+        # Wait for a seek, rather than checking for a seek with tryRecv,
         # because there is no demuxing so nothing else to do while we wait
       case control.kind:
       of cSeek:
@@ -142,9 +133,10 @@ proc decmux*(control: ptr Channel[Control]) {.thread} =
 
 proc cleanup*(lov: Lov) =
   deallocShared(lov.control)
-  deallocShared(lov.packet)
+  deallocShared(lov.picture)
+  deallocShared(lov.samples)
 
-proc newLov*(demuxer: Demuxer, queueSize = 5): Lov =
+proc newLov*(demuxer: Demuxer, queueSize = defaultQueueSize): Lov =
   new(result, cleanup)
   result.demuxer = demuxer
   result.av1Decoder = dav1d.newDecoder()
@@ -152,10 +144,12 @@ proc newLov*(demuxer: Demuxer, queueSize = 5): Lov =
     # opus is supposed to decode at 48k stereo and then downsample and/or downmix
 
   result.control = cast[ptr Channel[Control]](allocShared0(sizeof(Channel[Control])))
-  result.packet = cast[ptr Channel[Packet]](allocShared0(sizeof(Channel[Packet])))
+  result.picture = cast[ptr Channel[(Picture, culonglong)]](allocShared0(sizeof(Channel[(Picture, culonglong)])))
+  result.samples = cast[ptr Channel[(Samples, culonglong)]](allocShared0(sizeof(Channel[(Samples, culonglong)])))
     # this gets cleaned up with function above
   result.control[].open(1)
-  result.packet[].open(queueSize)
+  result.picture[].open(queueSize)
+  result.samples[].open(queueSize * chStereo.int)
     # todo: buffer control messages and drop the right ones
   result.decmux.createThread(decmux, result.control)
 
@@ -163,21 +157,22 @@ proc newLov*(demuxer: Demuxer, queueSize = 5): Lov =
     demuxer: result.demuxer,
     av1Decoder: result.av1Decoder,
     opusDecoder: result.opusDecoder,
-    packet: result.packet,
+    picture: result.picture,
+    samples: result.samples,
     control: result.control
   )))
 
-template newLov*(file: File, queueSize = 5): Lov =
-  newLov(newDemuxer(file))
+template newLov*(file: File, queueSize = defaultQueueSize): Lov =
+  newLov(newDemuxer(file), queueSize)
 
-template newLov*(filename: string, queueSize = 5): Lov =
-  newLov(newDemuxer(filename.open))
+template newLov*(filename: string, queueSize = defaultQueueSize): Lov =
+  newLov(newDemuxer(filename.open), queueSize)
 
-proc getPacket*(lov: Lov): Packet =
-  ## Wait for a packet form the demuxer-decoder. A packet could be
-  ## a decoded frame of video, a decoded chunk of audio samples, or
-  ## a flag that demuxing-decoding is complete.
-  lov.packet[].recv()
+proc getPictureAndTimestamp*(lov: Lov): (Picture, culonglong) =
+  lov.picture[].recv()
+
+proc getSamplesAndTimestamp*(lov: Lov): (Samples, culonglong) =
+  lov.samples[].recv()
 
 proc seek*(lov: Lov, timestamp: uint64) =
   ## Instruct the demuxer-decoder to change its timestamp to the specified time
