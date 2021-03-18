@@ -1,4 +1,4 @@
-import os, deques
+import os, times
 import sdl2, sdl2/[audio, gfx], lov/sdl2_aux
 import lov, nestegg, opus
 
@@ -26,7 +26,7 @@ of "--help":
   echo "RIGHT      Skip forward 1 second"
   quit 127
 else:
-  l = newLov(paramStr(1))
+  l = newLov(paramStr(1), 100)
 
 ### init SDL
 if 0.SDL_return < sdl2.init(INIT_EVERYTHING):
@@ -74,9 +74,88 @@ let texture = createTexture(renderer, SDL_PIXELFORMAT_IYUV, SDL_TEXTUREACCESS_ST
 if 0 != renderer.clear():
   raise newException(IOError, $getError())
 
+type
+  AudioDataObj = object
+    lov: Lov
+    samples: Samples
+    position: int
+    timestamp: culonglong
+  AudioData = ref AudioDataObj
+
+proc audioCallback(inputData: pointer; output: ptr uint8; bytesToWrite: cint) {.cdecl.} =
+  var
+    # cast data to useful structure
+    inputData = cast[AudioData](inputData)
+    
+    # use an array as output buffer to be as safe as possible while interoperating with C
+    output = cast[ptr UncheckedArray[byte]](output)
+
+    # use an array as input buffer to be as safe as possible while interoperating with C
+    input: ptr UncheckedArray[byte]
+
+    # record how many samples were already read from the current input
+    inputPosition: int
+
+    # record how long the current chunk is
+    bytesToRead: int
+  
+    # record how many samples were written to the output
+    outputPosition = 0
+
+  # initialize input variables if there is an input,
+  # otherwise let input loading code do that
+  if inputData.samples != nil:
+    bytesToRead = inputData.samples.bytes
+    input = cast[ptr UncheckedArray[byte]](inputData.samples.data)
+    inputPosition = inputData.position
+
+  # keep going until bytesToWrite samples were written
+  while outputPosition < bytesToWrite:
+
+    # get another chunk of decoded samples from the queue
+    if inputData.samples == nil:
+      var r = inputData.lov.samples[].tryRecv()
+      if not r.dataAvailable:
+        stderr.write("no audio data, skipping\n")
+        break
+      (inputData.samples, inputData.timestamp) = r.msg
+
+      bytesToRead = inputData.samples.bytes
+      input = cast[ptr UncheckedArray[byte]](inputData.samples.data)
+      inputPosition = 0
+
+    # write as many samples as can without loading another chunk of decoded samples,
+    # and without overflowing the output buffer
+    let nextBytes = min(bytesToRead - inputPosition, bytesToWrite - outputPosition)
+
+    echo "copy outputPosition:", $outputPosition, " bytesToWrite: ", $bytesToWrite, " inputPosition:", $inputPosition, " bytesToRead: ", $bytesToRead, " nextBytes: " & $nextBytes & " chunks: ", $inputData.lov.samples[].peek()
+    
+    # do the actual writing. note taking the address from an array access is
+    # a convenient alternative to pointer arithmetic that is as safe as is possible
+    # for C-interoperable code
+    copyMem(output[outputPosition].addr, input[inputPosition].addr, nextBytes)
+    inputPosition += nextBytes
+    outputPosition += nextBytes
+
+    if inputPosition >= bytesToRead:
+      inputData.samples = nil
+
+  # store the input position for the next call
+  inputData.position = inputPosition
+
+
 # initialize SDL audio
 let audioBufferSize = uint16((1.0 / fps) * rate.float * channels.float)
-let requested = AudioSpec(freq: 48000.cint, channels: 2.uint8, samples: 1024 * 64.uint16, format: AUDIO_S16LSB)
+var inputData = AudioData(lov: l)
+let requested = AudioSpec(
+  freq: 48000.cint,
+  channels: 2.uint8,
+  samples: 1024 * 64.uint16,
+  format: AUDIO_S16LSB,
+  callback: audioCallback,
+  userdata: cast[pointer](inputData)
+)
+
 var obtained = AudioSpec()
 let audioDevice = openAudioDevice(nil, 0, requested.unsafeAddr, obtained.unsafeAddr, 0)
 if audioDevice == 0:
@@ -92,13 +171,23 @@ var
   done = false
   evt = sdl2.defaultEvent
   fpsman: FpsManager
-  timestamp: culonglong
-  pictures: Deque[lov.Packet]
+  queuedAudioDuration: Duration
+  decodedAudioDuration: Duration
+  displayedVideoDuration: Duration
+  playedAudioWhenPresentedVideoDuration: Duration
 
 fpsman.init
 fpsman.setFramerate(fps)
 audioDevice.pauseAudioDevice(0)
-pictures = initDeque[lov.Packet]()
+
+template getQueuedAudioDuration(): Duration =
+  initDuration(((1_000_000_000 * audioDevice.getQueuedAudioSize().int64) div (sizeof(int16) * obtained.channels.int)) div obtained.freq)
+
+template getPlayedAudioDuration(): Duration =
+  decodedAudioDuration - getQueuedAudioDuration()
+
+template inMilliseconds(duration: Duration): int =
+  (duration.inMicroseconds div 1_000_000)
 
 while run:
   var saught = false
@@ -125,82 +214,83 @@ while run:
           saught = true
           done = false
           l.seek(0)
+#[
       of K_LEFT:
         if not saught:
           saught = true
           done = false
-          l.seek(if timestamp < smallskip: 0.uint64 else: timestamp - smallSkip)
+          l.seek(if videoTimestamp < smallskip: 0.uint64 else: videoTimestamp - smallSkip)
       of K_RIGHT:
         if not saught:
           saught = true
-          l.seek(timestamp + smallSkip)
+          l.seek(videoTimestamp + smallSkip)
       of K_DOWN:
         if not saught:
           saught = true
           done = false
-          l.seek(timestamp + mediumSkip)
+          l.seek(videoTimestamp + mediumSkip)
       of K_UP:
         if not saught:
           saught = true
           done = false
-          l.seek(if timestamp < mediumskip: 0.uint64 else: timestamp - mediumSkip)
+          l.seek(if videoTimestamp < mediumskip: 0.uint64 else: videoTimestamp - mediumSkip)
       of K_PAGEDOWN:
         if not saught:
           saught = true
           done = false
-          l.seek(timestamp + largeSkip)
+          l.seek(videoTimestamp + largeSkip)
       of K_PAGEUP:
         if not saught:
           saught = true
           done = false
-          l.seek(if timestamp < largeskip: 0.uint64 else: timestamp - largeSkip)
+          l.seek(if videoTimestamp < largeskip: 0.uint64 else: videoTimestamp - largeSkip)
+]#
       else:
         discard
     else:
-      discard
-
-  if not done:
-    while play:
-      # if playing, keep getting packets until next video frame
-      let packet = l.getPacket()
-        # wait for a packet containing a demuxed packet
-
-      case packet.kind:
-
-      of pktVideo:
-        # show a video frame from the queue
-        # a new packet will be demuxed automagically to the channel queue
-        pictures.addFirst(packet)
-        break
-
-      of pktAudio:
-        # play back a chunk of audio data from the queue
-        # a new packet will be demuxed automagically in the demuxer thread to refill the channel queue
-        if 0 != audioDevice.queueAudio(packet.samples.data, packet.samples.bytes.uint32):
-          raise newException(IOError, $getError())
-        discard
-
-      of pktDone:
-        done = true
-        break
-
-    let packet = pictures.popLast()
-
-    try:
-      texture.update(packet.picture)
-    except ValueError:
-      # TODO: warn or handle
       discard
 
   if 0 != renderer.clear():
     raise newException(IOError, $getError())
   if 0.SDL_Return != renderer.copy(texture, nil, nil):
     raise newException(IOError, $getError())
-  #if init:
-  #  (70 + (obtained.samples.float * 1000.0 / obtained.freq.float)).uint32.delay
-  #else:
-  fpsman.delay
-  renderer.present()
+
+  block:
+    var wait = false
+    var delay: int64
+
+    var (picture, timestamp) = l.getPictureAndTimestamp()
+
+    if not wait:
+      try:
+        texture.update(picture)
+      except ValueError:
+        # TODO: warn or handle
+        discard
+
+    let currentVideoDuration = initDuration(timestamp.int64)
+
+    #[
+
+    echo "getQueuedAudioSize: ", $audioDevice.getQueuedAudioSize()
+    echo "getQueuedAudioDuration: ", $getQueuedAudioDuration()
+    echo "decodedAudioDuration: ", $decodedAudioDuration
+    echo "currentVideoDuration: ", $currentVideoDuration
+    echo "displayedVideoDuration: ", $displayedVideoDuration
+    echo "getPlayedAudioDuration(): ", $getPlayedAudioDuration()
+    echo "playedAudioWhenPresentedVideoDuration: ", $playedAudioWhenPresentedVideoDuration
+    #echo "calculated delay: ", $(currentVideoDuration - displayedVideoDuration - (getPlayedAudioDuration() - playedAudioWhenPresentedVideoDuration))
+    echo ""
+    ]#
+
+    delay = 30
+
+    if delay > 0:
+      delay.uint32.delay
+
+    renderer.present()
+    #playedAudioWhenPresentedVideoDuration = getPlayedAudioDuration()
+    #displayedVideoDuration = initDuration(packet.timestamp.int64)
 
 destroy(renderer)
 destroy(texture)
