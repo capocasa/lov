@@ -80,6 +80,7 @@ type
     samples: Samples
     position: int
     timestamp: culonglong
+    timerCount: uint64
   AudioData = ref AudioDataObj
 
 proc audioCallback(inputData: pointer; output: ptr uint8; bytesToWrite: cint) {.cdecl.} =
@@ -116,19 +117,20 @@ proc audioCallback(inputData: pointer; output: ptr uint8; bytesToWrite: cint) {.
     if inputData.samples == nil:
       var r = inputData.lov.samples[].tryRecv()
       if not r.dataAvailable:
-        stderr.write("no audio data, skipping\n")
+        zeroMem(output[outputPosition].addr, bytesToWrite - outputPosition)
         break
       (inputData.samples, inputData.timestamp) = r.msg
 
       bytesToRead = inputData.samples.bytes
       input = cast[ptr UncheckedArray[byte]](inputData.samples.data)
       inputPosition = 0
+      inputData.timerCount = getPerformanceCounter()
 
     # write as many samples as can without loading another chunk of decoded samples,
     # and without overflowing the output buffer
     let nextBytes = min(bytesToRead - inputPosition, bytesToWrite - outputPosition)
 
-    echo "copy outputPosition:", $outputPosition, " bytesToWrite: ", $bytesToWrite, " inputPosition:", $inputPosition, " bytesToRead: ", $bytesToRead, " nextBytes: " & $nextBytes & " chunks: ", $inputData.lov.samples[].peek()
+    # echo "copy outputPosition:", $outputPosition, " bytesToWrite: ", $bytesToWrite, " inputPosition:", $inputPosition, " bytesToRead: ", $bytesToRead, " nextBytes: " & $nextBytes & " chunks: ", $inputData.lov.samples[].peek()
     
     # do the actual writing. note taking the address from an array access is
     # a convenient alternative to pointer arithmetic that is as safe as is possible
@@ -146,20 +148,27 @@ proc audioCallback(inputData: pointer; output: ptr uint8; bytesToWrite: cint) {.
 
 # initialize SDL audio
 let audioBufferSize = uint16((1.0 / fps) * rate.float * channels.float)
-var inputData = AudioData(lov: l)
+var timerResolution = getPerformanceFrequency()
+var audioData = AudioData(lov: l)
+GC_ref(audioData)
 let requested = AudioSpec(
   freq: 48000.cint,
   channels: 2.uint8,
   samples: 1024 * 64.uint16,
   format: AUDIO_S16LSB,
   callback: audioCallback,
-  userdata: cast[pointer](inputData)
+  userdata: cast[pointer](audioData)
 )
 
 var obtained = AudioSpec()
+
 let audioDevice = openAudioDevice(nil, 0, requested.unsafeAddr, obtained.unsafeAddr, 0)
 if audioDevice == 0:
   raise newException(IOError, $getError())
+
+# let audioBufferDelay = 1_000_000_000 * requested.samples div requested.freq.culonglong div 2
+
+let audioBufferDelay = 120_000_000.culonglong
 
 ### present video frames and audio samples
 
@@ -188,6 +197,17 @@ template getPlayedAudioDuration(): Duration =
 
 template inMilliseconds(duration: Duration): int =
   (duration.inMicroseconds div 1_000_000)
+
+proc getAudioTime(audioData: AudioData): culonglong =
+  if audioData.timerCount == 0:
+    return 0
+  let audioDelta = getPerformanceCounter() - audioData.timerCount
+  let audioTime = audioData.timestamp + audioDelta
+  if audioTime < audioBufferDelay:
+    return 0
+  audioTime - audioBufferDelay
+
+echo "timer res ", $timerResolution
 
 while run:
   var saught = false
@@ -256,22 +276,19 @@ while run:
     raise newException(IOError, $getError())
 
   block:
-    var wait = false
-    var delay: int64
 
-    var (picture, timestamp) = l.getPictureAndTimestamp()
+    var (picture, pictureTimestamp) = l.getPictureAndTimestamp()
 
-    if not wait:
-      try:
-        texture.update(picture)
-      except ValueError:
-        # TODO: warn or handle
-        discard
+    # echo "picture timestamp ", $pictureTimestamp, " audioTime ", $audioTime 
 
-    let currentVideoDuration = initDuration(timestamp.int64)
+    try:
+      texture.update(picture)
+    except ValueError:
+      # TODO: warn or handle
+      discard
 
     #[
-
+    let currentVideoDuration = initDuration(pictureTimestamp.int64)
     echo "getQueuedAudioSize: ", $audioDevice.getQueuedAudioSize()
     echo "getQueuedAudioDuration: ", $getQueuedAudioDuration()
     echo "decodedAudioDuration: ", $decodedAudioDuration
@@ -283,16 +300,17 @@ while run:
     echo ""
     ]#
 
-    delay = 30
+    let audioTime = audioData.getAudioTime()
 
-    if delay > 0:
-      delay.uint32.delay
+    if pictureTimestamp > audioTime:
+      ((pictureTimestamp - audioTime) div 1_000_000).uint32.delay
 
     renderer.present()
     #playedAudioWhenPresentedVideoDuration = getPlayedAudioDuration()
-    #displayedVideoDuration = initDuration(packet.timestamp.int64)
+    #displayedVideoDuration = initDuration(packet.pictureTimestamp.int64)
 
 destroy(renderer)
 destroy(texture)
 audioDevice.closeAudioDevice
+GC_unref(audioData)
 sdl2.quit()
