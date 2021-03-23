@@ -26,7 +26,9 @@ of "--help":
   echo "RIGHT      Skip forward 1 second"
   quit 127
 else:
-  l = newLov(paramStr(1), 100)
+  l = newLov(paramStr(1), 20)
+
+let verbose = true
 
 ### init SDL
 if 0.SDL_return < sdl2.init(INIT_EVERYTHING):
@@ -38,13 +40,6 @@ var
   height = l.demuxer.firstVideo.videoParams.height
   rate = l.demuxer.firstAudio.audioParams.rate
   channels = l.demuxer.firstAudio.audioParams.channels
-#[
-  fps = 25.0
-  width = 720
-  height = 480
-  rate = 48000
-  channels = 2
-]#
 
 var window = createWindow(
   "lov",
@@ -115,12 +110,19 @@ proc audioCallback(inputData: pointer; output: ptr uint8; bytesToWrite: cint) {.
 
     # get another chunk of decoded samples from the queue
     if inputData.samples == nil:
-      var r = inputData.lov.samples[].tryRecv()
-      if not r.dataAvailable:
-        zeroMem(output[outputPosition].addr, bytesToWrite - outputPosition)
+      let queueSize = inputData.lov.samples[].peek()
+      if queueSize == 0:
+        # Emit silence if there is a buffer underrun
+        # this only works because this is the only audio thread consuming audio frames
+        # it should really be using tryRecv, but that failed a lot even with
+        # a populated queue
+        let nextBytes = bytesToWrite - outputPosition
+        if verbose:
+          stderr.write "frames available: ", $inputData.lov.samples[].peek(), "\n"
+          stderr.write "audio buffer underrun, skipping ", nextBytes div (sizeof(int16) * chStereo.int), " frames\n"
+        zeroMem(output[outputPosition].addr, nextBytes)
         break
-      (inputData.samples, inputData.timestamp) = r.msg
-
+      (inputData.samples, inputData.timestamp) = inputData.lov.samples[].recv()
       bytesToRead = inputData.samples.bytes
       input = cast[ptr UncheckedArray[byte]](inputData.samples.data)
       inputPosition = 0
@@ -140,6 +142,8 @@ proc audioCallback(inputData: pointer; output: ptr uint8; bytesToWrite: cint) {.
     outputPosition += nextBytes
 
     if inputPosition >= bytesToRead:
+      # if current frame is depleted, set it to nil
+      # so a new one will be received from the queue
       inputData.samples = nil
 
   # store the input position for the next call
@@ -166,9 +170,9 @@ let audioDevice = openAudioDevice(nil, 0, requested.unsafeAddr, obtained.unsafeA
 if audioDevice == 0:
   raise newException(IOError, $getError())
 
-# let audioBufferDelay = 1_000_000_000 * requested.samples div requested.freq.culonglong div 2
+let audioBufferCompensation = 40_000_000
 
-let audioBufferDelay = 120_000_000.culonglong
+let audioBufferDelay = 1_000_000_000 * requested.samples div requested.freq.culonglong div 2 + audioBufferCompensation.uint64
 
 ### present video frames and audio samples
 
@@ -206,8 +210,6 @@ proc getAudioTime(audioData: AudioData): culonglong =
   if audioTime < audioBufferDelay:
     return 0
   audioTime - audioBufferDelay
-
-echo "timer res ", $timerResolution
 
 while run:
   var saught = false
@@ -286,19 +288,6 @@ while run:
     except ValueError:
       # TODO: warn or handle
       discard
-
-    #[
-    let currentVideoDuration = initDuration(pictureTimestamp.int64)
-    echo "getQueuedAudioSize: ", $audioDevice.getQueuedAudioSize()
-    echo "getQueuedAudioDuration: ", $getQueuedAudioDuration()
-    echo "decodedAudioDuration: ", $decodedAudioDuration
-    echo "currentVideoDuration: ", $currentVideoDuration
-    echo "displayedVideoDuration: ", $displayedVideoDuration
-    echo "getPlayedAudioDuration(): ", $getPlayedAudioDuration()
-    echo "playedAudioWhenPresentedVideoDuration: ", $playedAudioWhenPresentedVideoDuration
-    #echo "calculated delay: ", $(currentVideoDuration - displayedVideoDuration - (getPlayedAudioDuration() - playedAudioWhenPresentedVideoDuration))
-    echo ""
-    ]#
 
     let audioTime = audioData.getAudioTime()
 
