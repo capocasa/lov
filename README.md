@@ -30,7 +30,7 @@ Road map
 
 lov works at its most basic task, but is not just yet usable as a player. Performance is really good though, so when the bugs are fixed this will be nice.
 
-- [ ] Fix A/V sync
+- [x] Fix A/V sync
 - [ ] Fix skipping
 - [ ] Fix all memory leaks
 - [x] webm demuxing
@@ -39,14 +39,13 @@ lov works at its most basic task, but is not just yet usable as a player. Perfor
 - [x] thread safety
 - [x] Automatic memory management
 - [x] Basic command-line usage
-- [ ] ~~Support Standard GC~~ will not support standard GC because of threading/shared heap requirement
 - [x] Support ARC and ORC
-- [x] Good High-level library interface
+- [ ] Freeze High-level library interface
 - [x] Library documentation
 - [x] Pause, play, pause and seek
 - [x] Test for memory related crashes
-- [x] Fix memory leak
 - [x] Resizing and fullscreen
+- [x] Evaluate possible long-term audio-video drift *fixed, syncs to audio*
 - [x] Testing on linux
 - [ ] Testing on OSX
 - [x] Testing on Windows
@@ -54,15 +53,15 @@ lov works at its most basic task, but is not just yet usable as a player. Perfor
 - [ ] Testing on Android
 - [ ] Testing on wasm
 - [ ] Testing on asm.js
-- [ ] ~~Compatibility with Nim 1.0~~ will not support Nim 1.0, need ORC
 - [ ] Continuous integration on linux
-- [ ] Evaluate possible long-term audio-video drift
-- [ ] Get rid of 1ms video frame jitter
-- [ ] Do nice performance tests
 - [ ] permit use of dav1d frame/tile threads for even better performance (needs decoder loop revamp)
-- [ ] Get rid of sdl2 dependency for library-only build *
+- [ ] Do nice performance tests
+- [ ] Get rid of 1ms video frame jitter (kind of hard to do cross-platform, hi-res timers seem to need polling)
+- [ ] Get rid of sdl2 dependency for library-only build (1)
+- [ ] Compatibility with Nim 1.0 *low priority*
+- [ ] Support default GC *low priority*
 
-* seems to depend on [nimble optional-dependencies](https://github.com/nim-lang/nimble/issues/506) feature
+*(1) seems to depend on [nimble optional-dependencies](https://github.com/nim-lang/nimble/issues/506) feature*
 
 Installation
 ------------
