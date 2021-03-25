@@ -132,8 +132,6 @@ proc audioCallback(inputData: pointer; output: ptr uint8; bytesToWrite: cint) {.
     # and without overflowing the output buffer
     let nextBytes = min(bytesToRead - inputPosition, bytesToWrite - outputPosition)
 
-    # echo "copy outputPosition:", $outputPosition, " bytesToWrite: ", $bytesToWrite, " inputPosition:", $inputPosition, " bytesToRead: ", $bytesToRead, " nextBytes: " & $nextBytes & " chunks: ", $inputData.lov.samples[].peek()
-    
     # do the actual writing. note taking the address from an array access is
     # a convenient alternative to pointer arithmetic that is as safe as is possible
     # for C-interoperable code
@@ -212,13 +210,14 @@ proc getAudioTime(audioData: AudioData): culonglong =
   audioTime - audioBufferDelay
 
 while run:
+  let audioTime = audioData.getAudioTime()
   var saught = false
     # prevent keyboard mashing
   while pollEvent(evt):
     const
-      smallSkip = 1_000_000
-      mediumSkip = 10_000_000
-      largeSkip = 60_000_000
+      smallSkip = 1_000_000_000'u64
+      mediumSkip = 10_000_000_000'u64
+      largeSkip = 60_000_000_000'u64
     case evt.kind:
     of QuitEvent:
       run = false
@@ -236,37 +235,36 @@ while run:
           saught = true
           done = false
           l.seek(0)
-#[
+
       of K_LEFT:
         if not saught:
           saught = true
           done = false
-          l.seek(if videoTimestamp < smallskip: 0.uint64 else: videoTimestamp - smallSkip)
+          l.seek(if audioTime < smallskip: 0.uint64 else: audioTime - smallSkip)
       of K_RIGHT:
         if not saught:
           saught = true
-          l.seek(videoTimestamp + smallSkip)
+          l.seek(audioTime + smallSkip)
       of K_DOWN:
         if not saught:
           saught = true
           done = false
-          l.seek(videoTimestamp + mediumSkip)
+          l.seek(audioTime + mediumSkip)
       of K_UP:
         if not saught:
           saught = true
           done = false
-          l.seek(if videoTimestamp < mediumskip: 0.uint64 else: videoTimestamp - mediumSkip)
+          l.seek(if audioTime < mediumskip: 0.uint64 else: audioTime - mediumSkip)
       of K_PAGEDOWN:
         if not saught:
           saught = true
           done = false
-          l.seek(videoTimestamp + largeSkip)
+          l.seek(audioTime + largeSkip)
       of K_PAGEUP:
         if not saught:
           saught = true
           done = false
-          l.seek(if videoTimestamp < largeskip: 0.uint64 else: videoTimestamp - largeSkip)
-]#
+          l.seek(if audioTime < largeskip: 0.uint64 else: audioTime - largeSkip)
       else:
         discard
     else:
@@ -281,15 +279,11 @@ while run:
 
     var (picture, pictureTimestamp) = l.getPictureAndTimestamp()
 
-    # echo "picture timestamp ", $pictureTimestamp, " audioTime ", $audioTime 
-
     try:
       texture.update(picture)
     except ValueError:
       # TODO: warn or handle
       discard
-
-    let audioTime = audioData.getAudioTime()
 
     if pictureTimestamp > audioTime:
       ((pictureTimestamp - audioTime) div 1_000_000).uint32.delay

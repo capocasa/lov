@@ -41,19 +41,21 @@ const
 template doSeek() =
   ## Utility template for decmux, handles a seek message
   # flush channel buffer
-  while decmuxInit.picture[].tryRecv.dataAvailable:
-    discard
-  while decmuxInit.samples[].tryRecv.dataAvailable:
-    discard
+  while decmuxInit.picture[].peek() > 0:
+    discard decmuxInit.picture[].recv()
+  while decmuxInit.samples[].peek() > 0:
+    discard decmuxInit.samples[].recv()
   while true:
     # empty video decoder
     try:
       discard decmuxInit.av1Decoder.getPicture()
     except BufferError:
       break
-  decmuxInit.av1Decoder.flush()
-    # reset video decoder state
+  decmuxInit.av1Decoder.flush() # reset video decoder state
   decmuxInit.demuxer.seek(control.timestamp)
+  
+  skipping = true
+  skipUntil = control.timestamp
 
 proc decmux*(control: ptr Channel[Control]) {.thread} =
   ## The demuxer-decoder thread- opens up a file, demuxes it into its packets,
@@ -69,9 +71,12 @@ proc decmux*(control: ptr Channel[Control]) {.thread} =
   else:
     raise newException(AssertionDefect, "Must init demuxer thread before sending other messages")
   
+  var skipping = false
+  var skipUntil:culonglong
   while true:
     block restart:
       for packet in decmuxInit.demuxer:
+
         let (received, control) = decmuxInit.control[].tryRecv
           ## Check if a seek was requested and handle it
         if received:
@@ -83,13 +88,19 @@ proc decmux*(control: ptr Channel[Control]) {.thread} =
           of cInit:
             raise newException(Defect, "already initialized")
 
+        # turn of frame skipping if far enough
+        if skipping:
+          if packet.timestamp >= skipUntil:
+            skipping = false
+
         case packet.track.kind:
         of tkAudio:
           case packet.track.audioCodec:
           of acOpus:
             for chunk in packet:
               let samples = decmuxInit.opusDecoder.decode(chunk.data, chunk.len)
-              decmuxInit.samples[].send((samples, packet.timestamp))
+              if not skipping:
+                decmuxInit.samples[].send((samples, packet.timestamp))
           else:
             raise newException(ValueError, "codec not supported: " & $packet.track.audioCodec)
         of tkVideo:
@@ -105,8 +116,8 @@ proc decmux*(control: ptr Channel[Control]) {.thread} =
               # video decode and delay for timing source
               try:
                 var picture = decmuxInit.av1Decoder.getPicture()
-                GC_ref(picture)
-                decmuxInit.picture[].send((picture, packet.timestamp))
+                if not skipping:
+                  decmuxInit.picture[].send((picture, packet.timestamp))
               except BufferError:
                 # TODO: permit frame/tile threads 
                 raise getCurrentException()
