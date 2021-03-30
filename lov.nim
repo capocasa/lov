@@ -14,6 +14,8 @@ type
       # garbage collected
       # consider this a hack
     decmux: Thread[ptr Channel[Control]]
+    queueSizeVideo*: int
+    queueSizeAudio*: int
   Lov* = ref LovObj
   ControlKind = enum
     cInit
@@ -36,26 +38,35 @@ type
 export Picture, Samples
 
 const
-  defaultQueueSize = 30
+  defaultQueueSize = 10
 
 template doSeek() =
   ## Utility template for decmux, handles a seek message
   # flush channel buffer
+  echo "clearing picture queue"
   while decmuxInit.picture[].peek() > 0:
     discard decmuxInit.picture[].recv()
+  echo "clearing samples queue"
   while decmuxInit.samples[].peek() > 0:
     discard decmuxInit.samples[].recv()
+  echo "clearing video decoder"
   while true:
     # empty video decoder
     try:
       discard decmuxInit.av1Decoder.getPicture()
     except BufferError:
       break
+  echo "flushing video decoder"
   decmuxInit.av1Decoder.flush() # reset video decoder state
+  echo "performing demuxer seek to ", $control.timestamp
   decmuxInit.demuxer.seek(control.timestamp)
   
-  skipping = true
-  skipUntil = control.timestamp
+  # a seek is performed by nim-nestegg on the video track.
+  # after the seek, the next video packet will be the correct one,
+  # but a number of audio packets will be earlier and need to be
+  # skipped
+  skipAudio = true
+  skipAudioUntil = control.timestamp
 
 proc decmux*(control: ptr Channel[Control]) {.thread} =
   ## The demuxer-decoder thread- opens up a file, demuxes it into its packets,
@@ -71,35 +82,42 @@ proc decmux*(control: ptr Channel[Control]) {.thread} =
   else:
     raise newException(AssertionDefect, "Must init demuxer thread before sending other messages")
   
-  var skipping = false
-  var skipUntil:culonglong
+  var skipAudio = false
+  var skipAudioUntil:culonglong
   while true:
     block restart:
+      echo "now restarting"
       for packet in decmuxInit.demuxer:
+        echo "incoming packet at ", $packet.timestamp
 
         let (received, control) = decmuxInit.control[].tryRecv
           ## Check if a seek was requested and handle it
         if received:
           case control.kind:
           of cSeek:
+            echo "incoming seek to ", $control.timestamp
             doSeek()
             break restart
 
           of cInit:
             raise newException(Defect, "already initialized")
 
-        # turn of frame skipping if far enough
-        if skipping:
-          if packet.timestamp >= skipUntil:
-            skipping = false
-
         case packet.track.kind:
         of tkAudio:
+          
+          # if audio packets are no longer earlier than the skip, stop skipping and 
+          # start using them
+          if skipAudio:
+            if packet.timestamp >= skipAudioUntil:
+              skipAudio = false
+
           case packet.track.audioCodec:
           of acOpus:
             for chunk in packet:
-              let samples = decmuxInit.opusDecoder.decode(chunk.data, chunk.len)
-              if not skipping:
+              if skipAudio:
+                echo "skipAudio audio packet at ", $packet.timestamp
+              if not skipAudio:
+                let samples = decmuxInit.opusDecoder.decode(chunk.data, chunk.len)
                 decmuxInit.samples[].send((samples, packet.timestamp))
           else:
             raise newException(ValueError, "codec not supported: " & $packet.track.audioCodec)
@@ -116,8 +134,9 @@ proc decmux*(control: ptr Channel[Control]) {.thread} =
               # video decode and delay for timing source
               try:
                 var picture = decmuxInit.av1Decoder.getPicture()
-                if not skipping:
-                  decmuxInit.picture[].send((picture, packet.timestamp))
+                if skipAudio:
+                  echo "skipAudio audio packet at ", $packet.timestamp
+                decmuxInit.picture[].send((picture, packet.timestamp))
               except BufferError:
                 # TODO: permit frame/tile threads 
                 raise getCurrentException()
@@ -131,6 +150,7 @@ proc decmux*(control: ptr Channel[Control]) {.thread} =
 
       # we now decoded everything in the file
 
+      echo "file complete, now waiting for seek"
       let control = decmuxInit.control[].recv()
         # Wait for a seek, rather than checking for a seek with tryRecv,
         # because there is no demuxing so nothing else to do while we wait
@@ -154,13 +174,15 @@ proc newLov*(demuxer: Demuxer, queueSize = defaultQueueSize): Lov =
   result.opusDecoder = opus.newDecoder(sr48k, chStereo)
     # opus is supposed to decode at 48k stereo and then downsample and/or downmix
 
+  result.queueSizeVideo = queueSize
+  result.queueSizeAudio = queueSize * chStereo.int
   result.control = cast[ptr Channel[Control]](allocShared0(sizeof(Channel[Control])))
   result.picture = cast[ptr Channel[(Picture, culonglong)]](allocShared0(sizeof(Channel[(Picture, culonglong)])))
   result.samples = cast[ptr Channel[(Samples, culonglong)]](allocShared0(sizeof(Channel[(Samples, culonglong)])))
     # this gets cleaned up with function above
   result.control[].open(1)
-  result.picture[].open(queueSize)
-  result.samples[].open(queueSize * chStereo.int)
+  result.picture[].open(result.queueSizeVideo)
+  result.samples[].open(result.queueSizeAudio)
     # todo: buffer control messages and drop the right ones
   result.decmux.createThread(decmux, result.control)
 
@@ -189,3 +211,5 @@ proc seek*(lov: Lov, timestamp: uint64) =
   ## Instruct the demuxer-decoder to change its timestamp to the specified time
   ## in nanoseconds.
   lov.control[].send(Control(kind: cSeek, timestamp: timestamp))
+
+
