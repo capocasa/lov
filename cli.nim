@@ -29,7 +29,7 @@ type
     verbose: bool
 
     ## The number of nanoseconds one tick of the hi-res timer represent, e.g. 1 on linux
-    hiresNanosecondsPerCount: uint64
+    hiresCountsPerSecond: uint64
 
   Params = ref ParamsObj
 
@@ -178,7 +178,7 @@ proc getAudioTime(audioData: AudioData): culonglong =
   ##
   if audioData.syncHiresCount == 0:
     return 0
-  let timeSinceSync = (getPerformanceCounter() - audioData.syncHiresCount) * audioData.params.hiresNanosecondsPerCount
+  let timeSinceSync = (getPerformanceCounter() - audioData.syncHiresCount) * 1_000_000_000 div audioData.params.hiresCountsPerSecond
   let audioTime = audioData.syncSampleTime + timeSinceSync
   if audioTime < audioData.delay:
     return 0
@@ -227,7 +227,7 @@ of "--help":
 else:
   params.path = paramStr(1)
 
-params.hiresNanosecondsPerCount = getPerformanceFrequency()
+params.hiresCountsPerSecond = getPerformanceFrequency()
 params.verbose = true
 
 params.audioFrequency = 48000
