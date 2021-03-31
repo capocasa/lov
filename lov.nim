@@ -43,22 +43,22 @@ const
 template doSeek() =
   ## Utility template for decmux, handles a seek message
   # flush channel buffer
-  echo "clearing picture queue"
+  #echo "clearing picture queue"
   while decmuxInit.picture[].peek() > 0:
     discard decmuxInit.picture[].recv()
-  echo "clearing samples queue"
+  #echo "clearing samples queue"
   while decmuxInit.samples[].peek() > 0:
     discard decmuxInit.samples[].recv()
-  echo "clearing video decoder"
+  #echo "clearing video decoder"
   while true:
     # empty video decoder
     try:
       discard decmuxInit.av1Decoder.getPicture()
     except BufferError:
       break
-  echo "flushing video decoder"
+  #echo "flushing video decoder"
   decmuxInit.av1Decoder.flush() # reset video decoder state
-  echo "performing demuxer seek to ", $control.timestamp
+  #echo "performing demuxer seek to ", $control.timestamp
   decmuxInit.demuxer.seek(control.timestamp)
   
   # a seek is performed by nim-nestegg on the video track.
@@ -86,16 +86,16 @@ proc decmux*(control: ptr Channel[Control]) {.thread} =
   var skipAudioUntil:culonglong
   while true:
     block restart:
-      echo "now restarting"
+      #echo "now restarting"
       for packet in decmuxInit.demuxer:
-        echo "incoming packet at ", $packet.timestamp
+        #echo "incoming packet at ", $packet.timestamp
 
         let (received, control) = decmuxInit.control[].tryRecv
           ## Check if a seek was requested and handle it
         if received:
           case control.kind:
           of cSeek:
-            echo "incoming seek to ", $control.timestamp
+            #echo "incoming seek to ", $control.timestamp
             doSeek()
             break restart
 
@@ -115,7 +115,8 @@ proc decmux*(control: ptr Channel[Control]) {.thread} =
           of acOpus:
             for chunk in packet:
               if skipAudio:
-                echo "skipAudio audio packet at ", $packet.timestamp
+                discard
+                #echo "skipAudio audio packet at ", $packet.timestamp
               if not skipAudio:
                 let samples = decmuxInit.opusDecoder.decode(chunk.data, chunk.len)
                 decmuxInit.samples[].send((samples, packet.timestamp))
@@ -135,7 +136,8 @@ proc decmux*(control: ptr Channel[Control]) {.thread} =
               try:
                 var picture = decmuxInit.av1Decoder.getPicture()
                 if skipAudio:
-                  echo "skipAudio audio packet at ", $packet.timestamp
+                  discard
+                  #echo "skipAudio audio packet at ", $packet.timestamp
                 decmuxInit.picture[].send((picture, packet.timestamp))
               except BufferError:
                 # TODO: permit frame/tile threads 
@@ -150,7 +152,7 @@ proc decmux*(control: ptr Channel[Control]) {.thread} =
 
       # we now decoded everything in the file
 
-      echo "file complete, now waiting for seek"
+      #echo "file complete, now waiting for seek"
       let control = decmuxInit.control[].recv()
         # Wait for a seek, rather than checking for a seek with tryRecv,
         # because there is no demuxing so nothing else to do while we wait

@@ -192,7 +192,6 @@ proc waitUntilPacketsDecoded(lov: Lov, fractionOfMax = 2) =
   ##
   let n = lov.queueSizeAudio div fractionOfMax
   while lov.samples[].peek() < n:
-    echo "waiting for buffer fill now at ", $lov.samples[].peek()
     1'u32.delay
 
 #
@@ -377,7 +376,6 @@ while run:
   if 0.SDL_Return != renderer.copy(texture, nil, nil):
     raise newException(IOError, $getError())
 
-  echo "waiting for picture"
   var (picture, pictureTimestamp) = l.getPictureAndTimestamp()
 
   try:
@@ -386,9 +384,12 @@ while run:
     # TODO: warn or handle
     discard
 
+  stderr.write "pictureTimestamp at ", $pictureTimestamp, " audioTime at ", $audioTime
   if pictureTimestamp > audioTime:
-    echo "pictureTimestamp at ", $pictureTimestamp, " audioTime at ", $audioTime, " delaying ", $((pictureTimestamp - audioTime) div 1_000_000)
+    stderr.write " delaying ", $((pictureTimestamp - audioTime) div 1_000_000), "\n"
     ((pictureTimestamp - audioTime) div 1_000_000).uint32.delay
+  else:
+    stderr.write " showing immediately\n"
 
   renderer.present()
 
