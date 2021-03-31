@@ -184,16 +184,6 @@ proc getAudioTime(audioData: AudioData): culonglong =
     return 0
   audioTime - audioData.delay
 
-proc waitUntilPacketsDecoded(lov: Lov, fractionOfMax = 2) =
-  ##
-  ## Block until enough packets have been decoded. fractionOfMax determines
-  ## how many as a fraction of the maximum amount, e.g. if the maximum amount
-  ## is 20, having a value of 2 will block until (1/2)*20 = 10 packets are decoded.
-  ##
-  let n = lov.queueSizeAudio div fractionOfMax
-  while lov.samples[].peek() < n:
-    1'u32.delay
-
 #
 # Start of application code
 #
@@ -314,15 +304,17 @@ template doSeek(seekPosition) =
     audioDevice.pauseAudioDevice(1)
     saught = true
     audioData.samples = nil
+    audioData.syncHiresCount = 0
+    audioData.syncSampleTime = 0
     l.seek(seekPosition)
-    l.waitUntilPacketsDecoded(2)
     audioDevice.pauseAudioDevice(0)
+    continue
 
-l.waitUntilPacketsDecoded(2)
 audioDevice.pauseAudioDevice(0)
 
 while run:
   let audioTime = audioData.getAudioTime()
+  echo "start cycle, audioTime ", $audioTime
   var saught = false
     # prevent keyboard mashing
   while pollEvent(evt):
@@ -376,25 +368,27 @@ while run:
   if 0.SDL_Return != renderer.copy(texture, nil, nil):
     raise newException(IOError, $getError())
 
-  var (picture, pictureTimestamp) = l.getPictureAndTimestamp()
+  if audioTime > 0:
+    var (picture, pictureTimestamp) = l.getPictureAndTimestamp()
 
-  try:
-    texture.update(picture)
-  except ValueError:
-    # TODO: warn or handle
-    discard
+    try:
+      texture.update(picture)
+    except ValueError:
+      # TODO: warn or handle
+      discard
 
-  stderr.write "pictureTimestamp at ", $pictureTimestamp, " audioTime at ", $audioTime
-  if pictureTimestamp > audioTime:
-    stderr.write " delaying ", $((pictureTimestamp - audioTime) div 1_000_000), "\n"
-    ((pictureTimestamp - audioTime) div 1_000_000).uint32.delay
+    stderr.write "pictureTimestamp at ", $pictureTimestamp, " audioTime at ", $audioTime
+    if pictureTimestamp > audioTime:
+      stderr.write " delaying ", $((pictureTimestamp - audioTime) div 1_000_000), "\n"
+      ((pictureTimestamp - audioTime) div 1_000_000).uint32.delay
+    else:
+      stderr.write " showing immediately\n"
   else:
-    stderr.write " showing immediately\n"
+    5.delay
 
   renderer.present()
 
 destroy(renderer)
 destroy(texture)
 audioDevice.closeAudioDevice
-GC_unref(audioData)
 sdl2.quit()
