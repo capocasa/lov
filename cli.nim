@@ -253,16 +253,14 @@ let renderer = createRenderer(window, -1, RendererAccelerated or RendererPresent
 if renderer == nil:
   raise newException(IOError, $getError())
 
-renderer.setDrawColor(0, 0, 0)
+# keep aspect ratio and handle window resizes
+if 0 != renderer.setLogicalSize(width.cint, height.cint):
+  raise newException(IOError, $getError())
 
-discard renderer.setLogicalSize(width.cint, height.cint)
-  # keep aspect ratio and handle window resizes
+renderer.setDrawColor(0, 0, 0)
 
 let texture = createTexture(renderer, SDL_PIXELFORMAT_IYUV, SDL_TEXTUREACCESS_STREAMING, width.cint, height.cint)
   # create texture, the video will render to this 
-
-if 0 != renderer.clear():
-  raise newException(IOError, $getError())
 
 var audioData = AudioData(
   lov: l,
@@ -299,7 +297,6 @@ var
   playedAudioWhenPresentedVideoDuration: Duration
 
 template doSeek(seekPosition) =
-  echo "seek key detected"
   if not saught:
     audioDevice.pauseAudioDevice(1)
     saught = true
@@ -314,7 +311,6 @@ audioDevice.pauseAudioDevice(0)
 
 while run:
   let audioTime = audioData.getAudioTime()
-  echo "start cycle, audioTime ", $audioTime
   var saught = false
     # prevent keyboard mashing
   while pollEvent(evt):
@@ -377,12 +373,11 @@ while run:
       # TODO: warn or handle
       discard
 
-    stderr.write "pictureTimestamp at ", $pictureTimestamp, " audioTime at ", $audioTime
     if pictureTimestamp > audioTime:
-      stderr.write " delaying ", $((pictureTimestamp - audioTime) div 1_000_000), "\n"
       ((pictureTimestamp - audioTime) div 1_000_000).uint32.delay
     else:
-      stderr.write " showing immediately\n"
+      discard
+
   else:
     5.delay
 

@@ -43,22 +43,17 @@ const
 template doSeek() =
   ## Utility template for decmux, handles a seek message
   # flush channel buffer
-  echo "performing demuxer seek to ", $control.timestamp
   decmuxInit.demuxer.seek(control.timestamp)
-  echo "clearing picture queue"
   while decmuxInit.picture[].peek() > 0:
     discard decmuxInit.picture[].recv()
-  echo "clearing samples queue"
   while decmuxInit.samples[].peek() > 0:
     discard decmuxInit.samples[].recv()
-  echo "clearing video decoder"
   while true:
     # empty video decoder
     try:
       discard decmuxInit.av1Decoder.getPicture()
     except BufferError:
       break
-  echo "flushing video decoder"
   decmuxInit.av1Decoder.flush() # reset video decoder state
   
   # a seek is performed by nim-nestegg on the video track.
@@ -86,8 +81,6 @@ proc decmux*(control: ptr Channel[Control]) {.thread} =
   var skipUntil:culonglong
 
   for packet in decmuxInit.demuxer:
-    echo "incoming packet at ", $packet.timestamp
-
     # if packets are no longer earlier than the skip, stop skipping and 
     # start using them
     if skip:
@@ -102,7 +95,6 @@ proc decmux*(control: ptr Channel[Control]) {.thread} =
         for chunk in packet:
           if skip:
             discard
-            echo "skip audio packet at ", $packet.timestamp, " for seek to ", skipUntil
           if not skip:
             let samples = decmuxInit.opusDecoder.decode(chunk.data, chunk.len)
             decmuxInit.samples[].send((samples, packet.timestamp))
@@ -115,13 +107,12 @@ proc decmux*(control: ptr Channel[Control]) {.thread} =
           try:
             decmuxInit.av1Decoder.send(chunk.data, chunk.len)
           except dav1d.DecodeError:
-            stderr.write "decode error, skipping video frame at ", packet.timestamp ,"\n"
+            discard
           except dav1d.BufferError:
             discard
 
           if skip:
             discard
-            echo "skip video packet at ", $packet.timestamp, " seeking to ", skipUntil
 
           try:
             var picture = decmuxInit.av1Decoder.getPicture()
@@ -142,7 +133,6 @@ proc decmux*(control: ptr Channel[Control]) {.thread} =
     if received:
       case control.kind:
       of cSeek:
-        echo "incoming seek to ", $control.timestamp
         doSeek()
 
       of cInit:
