@@ -31,7 +31,7 @@ Road map
 lov works at its most basic task, but is not just yet usable as a player. Performance is really good though, so when the bugs are fixed this will be nice.
 
 - [x] Fix A/V sync
-- [ ] Fix skipping
+- [x] Fix skipping
 - [ ] Fix all memory leaks
 - [x] webm demuxing
 - [x] av1 video decoding
